@@ -9,7 +9,7 @@ interface WeatherCardsProps {
 function TempIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9a3 3 0 00-3 3v6a3 3 0 106 0v-6a3 3 0 00-3-3z M12 5v2" />
     </svg>
   );
 }
@@ -25,41 +25,41 @@ function PressureIcon() {
 function WindIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 5l-1 1m0 0l-1 1m1-1v6m0 0l1 1m-1-1l-1 1M4 9h1m15 0h1M4 15h1m15 0h1" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.59 4.59A2 2 0 1111 8H2m10.59 11.41A2 2 0 1014 16H2m15.73-8.27A2.5 2.5 0 1119.5 12H2" />
     </svg>
   );
 }
 
 export function WeatherCards({ weather }: WeatherCardsProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card title="Temperatura Máx" subtitle={formatSol(weather.sol)} icon={<TempIcon />}>
-        <p className="text-3xl font-display text-mars-400">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <Card title="Máxima" subtitle={formatSol(weather.sol)} icon={<TempIcon />} className="hover:border-mars-600/30 transition-colors">
+        <p className="text-2xl sm:text-3xl font-display text-mars-400 tabular-nums">
           {weather.tempMax.toFixed(1)}
-          <span className="text-lg text-slate-500 ml-1">°C</span>
+          <span className="text-base text-slate-500 ml-1">°C</span>
         </p>
       </Card>
 
-      <Card title="Temperatura Mín" subtitle={`Média: ${weather.tempAvg.toFixed(1)}°C`} icon={<TempIcon />}>
-        <p className="text-3xl font-display text-sky-400">
+      <Card title="Mínima" subtitle={`Média ${weather.tempAvg.toFixed(1)}°C`} icon={<TempIcon />} className="hover:border-sky-600/30 transition-colors">
+        <p className="text-2xl sm:text-3xl font-display text-sky-400 tabular-nums">
           {weather.tempMin.toFixed(1)}
-          <span className="text-lg text-slate-500 ml-1">°C</span>
+          <span className="text-base text-slate-500 ml-1">°C</span>
         </p>
       </Card>
 
-      <Card title="Pressão Atmosférica" subtitle="Elysium Planitia (InSight)" icon={<PressureIcon />}>
-        <p className="text-3xl font-display text-white">
-          {weather.pressure.toFixed(1)}
-          <span className="text-lg text-slate-500 ml-1">Pa</span>
+      <Card title="Pressão" subtitle="Atmosfera local" icon={<PressureIcon />} className="hover:border-space-600/50 transition-colors">
+        <p className="text-2xl sm:text-3xl font-display text-white tabular-nums">
+          {weather.pressure.toFixed(0)}
+          <span className="text-base text-slate-500 ml-1">Pa</span>
         </p>
       </Card>
 
-      <Card title="Vento" subtitle={`Direção: ${weather.windDirection}`} icon={<WindIcon />}>
-        <p className="text-3xl font-display text-white">
+      <Card title="Vento" subtitle={weather.windDirection} icon={<WindIcon />} className="hover:border-space-600/50 transition-colors">
+        <p className="text-2xl sm:text-3xl font-display text-white tabular-nums">
           {weather.windSpeed.toFixed(1)}
-          <span className="text-lg text-slate-500 ml-1">m/s</span>
+          <span className="text-base text-slate-500 ml-1">m/s</span>
         </p>
-        <p className="text-xs text-slate-500 mt-2">Estação: {weather.season}</p>
+        <p className="text-[11px] text-slate-500 mt-2 capitalize">{weather.season}</p>
       </Card>
     </div>
   );

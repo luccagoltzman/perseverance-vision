@@ -29,61 +29,82 @@ export function PhotoModal({ photo, rover, onClose }: PhotoModalProps) {
 
   if (!photo) return null;
 
+  const meta = [
+    { label: 'Frame ID', value: `#${photo.id}`, mono: true },
+    { label: 'Sol marciano', value: formatSol(photo.sol), accent: true },
+    {
+      label: 'Data terrestre',
+      value: new Date(photo.earth_date).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      }),
+    },
+    { label: 'Câmera', value: getCameraLabel(rover, photo.camera.name) },
+    { label: 'Status', value: photo.rover.status },
+  ];
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Visualizador de foto"
     >
       <div
-        className="relative max-w-4xl w-full max-h-[90vh] bg-space-900 rounded-xl border border-space-700 overflow-hidden"
+        className="relative w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] bg-space-900 sm:rounded-2xl border-t sm:border border-space-700 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-space-800 sm:hidden">
+          <p className="text-sm font-medium text-white">Detalhes da foto</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-space-800 text-slate-400 flex items-center justify-center"
+            aria-label="Fechar"
+          >
+            ✕
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-space-800/80 text-slate-400 hover:text-white flex items-center justify-center"
+          className="hidden sm:flex absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-space-800/90 text-slate-400 hover:text-white items-center justify-center border border-space-700"
           aria-label="Fechar"
         >
           ✕
         </button>
 
-        <div className="overflow-auto max-h-[60vh]">
+        <div className="flex-1 overflow-auto bg-black/40">
           <img
             src={photo.img_src}
             alt={`Foto ${photo.id} — ${photo.camera.full_name}`}
-            className="w-full h-auto"
+            className="w-full h-auto max-h-[55vh] sm:max-h-[60vh] object-contain mx-auto"
           />
         </div>
 
-        <div className="p-5 border-t border-space-700 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Frame ID</p>
-            <p className="font-mono text-white">#{photo.id}</p>
-          </div>
-          <div>
-            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Sol Marciano</p>
-            <p className="font-mono text-mars-400">{formatSol(photo.sol)}</p>
-          </div>
-          <div>
-            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Data Terrestre</p>
-            <p className="text-white">
-              {new Date(photo.earth_date).toLocaleDateString('pt-BR')}
-            </p>
-          </div>
-          <div>
-            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Câmera</p>
-            <p className="text-white text-xs leading-snug">
-              {getCameraLabel(rover, photo.camera.name)}
-            </p>
-          </div>
-          <div className="col-span-2 sm:col-span-4">
-            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">
-              Status do Veículo
-            </p>
-            <p className="text-white capitalize">{photo.rover.status}</p>
+        <div className="p-4 sm:p-5 border-t border-space-700 bg-space-900/95">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {meta.map((item) => (
+              <div key={item.label}>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                  {item.label}
+                </p>
+                <p
+                  className={`text-sm leading-snug ${
+                    item.accent
+                      ? 'font-mono text-mars-400'
+                      : item.mono
+                        ? 'font-mono text-white'
+                        : 'text-white capitalize'
+                  }`}
+                >
+                  {item.value}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>

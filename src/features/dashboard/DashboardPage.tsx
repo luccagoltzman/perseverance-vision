@@ -1,13 +1,18 @@
+import { Link } from 'react-router-dom';
 import { useMarsWeather, useMarsWeatherHistory } from '@/hooks/useMarsWeather';
 import { useOnlineStatus } from '@/hooks/usePWAStatus';
 import { WeatherCards } from './WeatherCards';
 import { TemperatureChart } from './TemperatureChart';
+import { RoverStatusGrid } from './RoverStatusGrid';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { OfflineScreen } from '@/components/common/OfflineScreen';
-import { isNetworkError } from '@/services/api';
-import { ROVER_LIST } from '@/utils/roverCameras';
-import { getCurrentSol } from '@/utils/solConverter';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SectionTitle } from '@/components/ui/SectionTitle';
+import { InfoBanner } from '@/components/ui/InfoBanner';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { isNetworkError } from '@/services/api';
+import { formatSol } from '@/utils/solConverter';
 
 export function DashboardPage() {
   const isOnline = useOnlineStatus();
@@ -20,19 +25,14 @@ export function DashboardPage() {
 
   if (isError && !weather) {
     const offline = !isOnline || isNetworkError(error);
-    if (offline) {
-      return (
-        <OfflineScreen
-          title="Telemetria indisponível offline"
-          message="Os dados climáticos deste Sol ainda não foram salvos localmente. Conecte-se para sincronizar."
-          onRetry={() => refetch()}
-        />
-      );
-    }
     return (
       <OfflineScreen
-        title="Erro ao carregar telemetria"
-        message="Não foi possível obter dados do InSight. Tente novamente em instantes."
+        title={offline ? 'Telemetria indisponível offline' : 'Erro ao carregar telemetria'}
+        message={
+          offline
+            ? 'Os dados climáticos ainda não foram salvos localmente. Conecte-se para sincronizar.'
+            : 'Não foi possível obter dados do InSight. Tente novamente em instantes.'
+        }
         onRetry={() => refetch()}
       />
     );
@@ -41,20 +41,36 @@ export function DashboardPage() {
   if (!weather) return null;
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-10 animate-fade-in">
+      <PageHeader
+        title="Centro de Comando"
+        description="Painel de telemetria marciana — clima histórico do InSight e status dos veículos exploradores."
+        badge={
+          <Badge variant="active">
+            {isFetching ? 'Sincronizando…' : 'Cache ativo'}
+          </Badge>
+        }
+        action={
+          <Link to="/gallery">
+            <Button variant="secondary" size="sm">
+              Abrir galeria
+            </Button>
+          </Link>
+        }
+      />
+
+      <InfoBanner variant="info" title="Sobre os dados de clima">
+        Medidos pelo lander <strong>InSight</strong> em Elysium Planitia. A missão encerrou em 2022 —
+        os valores são o <strong>último registro disponível</strong> ({formatSol(weather.sol)}), não o
+        clima ao vivo de hoje.
+      </InfoBanner>
+
       <section>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="font-display text-2xl text-white tracking-wide">
-              Condições Ambientais
-            </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Dados do lander InSight — última atualização{' '}
-              {isFetching ? '(sincronizando...)' : '(cache ativo)'}
-            </p>
-          </div>
-          <Badge variant="active">InSight · Elysium Planitia</Badge>
-        </div>
+        <SectionTitle
+          title="Condições ambientais"
+          subtitle="Temperatura, pressão e vento na superfície marciana"
+          trailing={<Badge variant="active">InSight</Badge>}
+        />
         <WeatherCards weather={weather} />
       </section>
 
@@ -67,30 +83,11 @@ export function DashboardPage() {
       </section>
 
       <section>
-        <h2 className="font-display text-lg text-white mb-4 tracking-wide">
-          Status dos Veículos
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {ROVER_LIST.map((rover) => (
-            <div
-              key={rover.name}
-              className="bg-space-800/40 border border-space-700/50 rounded-lg p-4"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-display text-sm text-white">{rover.label}</span>
-                <Badge variant={rover.status === 'active' ? 'active' : 'inactive'}>
-                  {rover.status === 'active' ? 'Ativo' : 'Concluído'}
-                </Badge>
-              </div>
-              <p className="text-xs text-slate-500">
-                Sol atual: {getCurrentSol(rover.name).toLocaleString('pt-BR')}
-              </p>
-              <p className="text-xs text-slate-600 mt-1">
-                Pouso: {new Date(rover.landingDate).toLocaleDateString('pt-BR')}
-              </p>
-            </div>
-          ))}
-        </div>
+        <SectionTitle
+          title="Veículos exploradores"
+          subtitle="Toque em um rover para ver suas fotos na galeria"
+        />
+        <RoverStatusGrid />
       </section>
     </div>
   );

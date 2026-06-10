@@ -27,7 +27,7 @@ export function TemperatureChart({ history }: TemperatureChartProps) {
 
   return (
     <Card title="Tendência de Temperatura" subtitle="Últimos 7 Sols — Elysium Planitia">
-      <div className="h-64 w-full mt-2">
+      <div className="h-56 sm:h-64 w-full mt-2 -mx-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />

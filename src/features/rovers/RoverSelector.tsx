@@ -8,24 +8,35 @@ interface RoverSelectorProps {
 
 export function RoverSelector({ selected, onChange }: RoverSelectorProps) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {ROVER_LIST.map((rover) => (
-        <button
-          key={rover.name}
-          type="button"
-          onClick={() => onChange(rover.name)}
-          className={`px-4 py-2.5 rounded-lg text-sm font-medium border transition-all ${
-            selected === rover.name
-              ? 'bg-mars-600/20 border-mars-600/50 text-mars-300'
-              : 'bg-space-800/40 border-space-700 text-slate-400 hover:text-white hover:border-space-600'
-          }`}
-        >
-          {rover.label}
-          {rover.status === 'completed' && (
-            <span className="ml-1.5 text-[10px] text-slate-600">(arquivo)</span>
-          )}
-        </button>
-      ))}
+    <div
+      className="flex gap-1 p-1 rounded-xl bg-space-900/60 border border-space-700/50 overflow-x-auto scrollbar-none"
+      role="tablist"
+      aria-label="Selecionar rover"
+    >
+      {ROVER_LIST.map((rover) => {
+        const isActive = selected === rover.name;
+        return (
+          <button
+            key={rover.name}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(rover.name)}
+            className={`flex-shrink-0 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              isActive
+                ? 'bg-mars-600 text-white shadow-md shadow-mars-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-space-800/80'
+            }`}
+          >
+            {rover.label}
+            {rover.status === 'completed' && (
+              <span className={`ml-1.5 text-[10px] ${isActive ? 'text-mars-200' : 'text-slate-600'}`}>
+                · arquivo
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

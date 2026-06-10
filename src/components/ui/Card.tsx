@@ -11,18 +11,20 @@ interface CardProps {
 export function Card({ children, className = '', title, subtitle, icon }: CardProps) {
   return (
     <div
-      className={`bg-space-800/60 backdrop-blur-sm border border-space-700/50 rounded-xl p-5 ${className}`}
+      className={`glass-panel p-4 sm:p-5 ${className}`}
     >
       {(title || icon) && (
-        <div className="flex items-start gap-3 mb-4">
+        <div className="flex items-start gap-3 mb-3">
           {icon && (
-            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-mars-600/20 flex items-center justify-center text-mars-400">
+            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-mars-600/15 flex items-center justify-center text-mars-400 ring-1 ring-mars-600/20">
               {icon}
             </div>
           )}
-          <div>
-            {title && <h3 className="font-display text-sm text-white tracking-wide">{title}</h3>}
-            {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+          <div className="min-w-0">
+            {title && (
+              <h3 className="font-display text-xs sm:text-sm text-white tracking-wide">{title}</h3>
+            )}
+            {subtitle && <p className="text-[11px] text-slate-500 mt-0.5 truncate">{subtitle}</p>}
           </div>
         </div>
       )}
