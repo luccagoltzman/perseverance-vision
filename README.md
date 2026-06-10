@@ -26,11 +26,17 @@ node scripts/generate-pwa-icons.mjs
 npm run dev
 ```
 
-Obtenha uma chave gratuita em [api.nasa.gov](https://api.nasa.gov/) e configure:
+Configure as chaves no `.env`:
 
 ```env
-VITE_NASA_API_KEY=sua_chave_aqui
+# Clima (dashboard)
+VITE_NASA_API_KEY=sua_chave_nasa
+
+# Fotos dos rovers (obrigatório)
+VITE_MARSVISTA_API_KEY=sua_chave_marsvista
 ```
+
+> **Importante:** A API Mars Photos da NASA (`api.nasa.gov/mars-photos`) está indisponível — o backend Heroku foi descontinuado. As fotos dos rovers usam o [Mars Vista API](https://marsvista.dev/signin) (chave gratuita).
 
 ## Scripts
 

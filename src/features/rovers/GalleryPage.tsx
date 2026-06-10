@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { MarsPhoto, RoverName } from '@/types/nasa';
 import { useRoverPhotos } from '@/hooks/useRoverPhotos';
+import { useRoverMaxSol } from '@/hooks/useRoverMaxSol';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useOnlineStatus } from '@/hooks/usePWAStatus';
 import { RoverSelector } from './RoverSelector';
@@ -11,6 +12,41 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { OfflineScreen } from '@/components/common/OfflineScreen';
 import { isNetworkError } from '@/services/api';
 import { getCurrentSol, formatSol } from '@/utils/solConverter';
+import { getDefaultEarthDate } from '@/services/marsPhotos';
+import { isMarsPhotosServiceError } from '@/services/marsPhotosErrors';
+import { hasMarsVistaKey } from '@/services/marsVistaPhotos';
+
+function getPhotosErrorMessage(error: unknown): { title: string; message: string } {
+  if (isMarsPhotosServiceError(error)) {
+    switch (error.code) {
+      case 'NASA_UNAVAILABLE':
+        return {
+          title: 'API NASA indisponível',
+          message: error.message,
+        };
+      case 'RATE_LIMIT':
+        return {
+          title: 'Limite de requisições',
+          message: error.message,
+        };
+      case 'UNAUTHORIZED':
+        return {
+          title: 'Chave inválida',
+          message: error.message,
+        };
+      case 'NO_PROVIDER':
+        return {
+          title: 'Provedor de fotos não configurado',
+          message: error.message,
+        };
+    }
+  }
+
+  return {
+    title: 'Erro ao carregar fotos',
+    message: 'Não foi possível obter imagens. Verifique sua conexão e as chaves no .env.',
+  };
+}
 
 export function GalleryPage() {
   const [rover, setRover] = useState<RoverName>('perseverance');
@@ -19,20 +55,22 @@ export function GalleryPage() {
   const [solInput, setSolInput] = useState<string>('');
 
   const isOnline = useOnlineStatus();
-  const currentSol = getCurrentSol(rover);
-  const querySol = solInput ? Number(solInput) : currentSol;
+  const estimatedSol = getCurrentSol(rover);
+  const { data: maxSol } = useRoverMaxSol(rover);
+  const displaySol = maxSol ?? estimatedSol;
+
+  const querySol = solInput ? Number(solInput) : undefined;
+  const queryEarthDate = !solInput ? getDefaultEarthDate() : undefined;
 
   const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
     useRoverPhotos({
       rover,
       sol: querySol,
+      earthDate: queryEarthDate,
       camera: camera ?? undefined,
     });
 
-  const allPhotos = useMemo(
-    () => data?.pages.flat() ?? [],
-    [data],
-  );
+  const allPhotos = useMemo(() => data?.pages.flat() ?? [], [data]);
 
   const cameraCounts = useMemo(() => {
     const counts: Record<string, number> = { all: allPhotos.length };
@@ -55,23 +93,28 @@ export function GalleryPage() {
     setSelectedPhoto(null);
   };
 
+  const filterLabel = solInput
+    ? formatSol(Number(solInput))
+    : `fotos recentes (${queryEarthDate})`;
+
   if (isLoading) {
     return <LoadingSpinner label={`Buscando fotos de ${rover}...`} />;
   }
 
   if (isError && allPhotos.length === 0) {
     const offline = !isOnline || isNetworkError(error);
-    return (
-      <OfflineScreen
-        title={offline ? 'Galeria indisponível offline' : 'Erro ao carregar fotos'}
-        message={
-          offline
-            ? `As fotos do ${formatSol(querySol)} ainda não foram salvas localmente.`
-            : 'Não foi possível obter imagens da NASA. Verifique sua conexão.'
-        }
-        onRetry={() => refetch()}
-      />
-    );
+    if (offline && !isMarsPhotosServiceError(error)) {
+      return (
+        <OfflineScreen
+          title="Galeria indisponível offline"
+          message={`As fotos de ${filterLabel} ainda não foram salvas localmente.`}
+          onRetry={() => refetch()}
+        />
+      );
+    }
+
+    const { title, message } = getPhotosErrorMessage(error);
+    return <OfflineScreen title={title} message={message} onRetry={() => refetch()} />;
   }
 
   return (
@@ -81,8 +124,23 @@ export function GalleryPage() {
           Exploração Visual
         </h2>
         <p className="text-sm text-slate-500 mb-4">
-          Registros fotográficos dos robôs exploradores — {formatSol(querySol)}
+          Registros fotográficos dos robôs exploradores — {filterLabel}
         </p>
+        {!hasMarsVistaKey() && (
+          <p className="text-xs text-amber-500/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-4">
+            A API Mars Photos da NASA está fora do ar. Para fotos estáveis, obtenha uma chave
+            gratuita em{' '}
+            <a
+              href="https://marsvista.dev/signin"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-amber-400"
+            >
+              marsvista.dev
+            </a>{' '}
+            e adicione <code className="text-amber-300">VITE_MARSVISTA_API_KEY</code> no .env.
+          </p>
+        )}
         <RoverSelector selected={rover} onChange={handleRoverChange} />
       </section>
 
@@ -96,7 +154,7 @@ export function GalleryPage() {
               id="sol-input"
               type="number"
               min={0}
-              placeholder={`Sol atual: ${currentSol}`}
+              placeholder={`Sol ~${displaySol.toLocaleString('pt-BR')} (deixe vazio para recentes)`}
               value={solInput}
               onChange={(e) => setSolInput(e.target.value)}
               className="flex-1 bg-space-800 border border-space-700 rounded-lg px-4 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-mars-500/50"

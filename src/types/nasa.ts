@@ -24,11 +24,18 @@ export interface MarsPhotosResponse {
   photos: MarsPhoto[];
 }
 
+export interface InsightSensorReading {
+  av: number;
+  mn: number;
+  mx: number;
+  ct: number;
+}
+
 export interface InsightWeatherSol {
-  AT: { av: number; mn: number; mx: number; ct: number };
-  HWS: { av: number; mn: number; mx: number; ct: number };
-  PRE: { av: number; mn: number; mx: number; ct: number };
-  WD: { most_common: { compass_degrees: number; compass_point: string } };
+  AT: InsightSensorReading;
+  HWS: InsightSensorReading;
+  PRE: InsightSensorReading;
+  WD: { most_common: { compass_degrees: number; compass_point: string; compass_right?: number; compass_left?: number } };
   First_UTC: string;
   Last_UTC: string;
   Season: string;

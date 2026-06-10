@@ -3,6 +3,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_NASA_API_KEY: string;
+  readonly VITE_MARSVISTA_API_KEY?: string;
 }
 
 interface ImportMeta {

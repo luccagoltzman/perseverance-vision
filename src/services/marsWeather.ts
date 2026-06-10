@@ -1,9 +1,18 @@
-import type { InsightWeatherResponse, WeatherSnapshot } from '@/types/nasa';
+import type { InsightWeatherResponse, InsightWeatherSol, WeatherSnapshot } from '@/types/nasa';
 import { nasaApi } from './api';
+
+function isSolData(value: unknown): value is InsightWeatherSol {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'AT' in value &&
+    typeof (value as InsightWeatherSol).AT === 'object'
+  );
+}
 
 function parseSolData(sol: string, data: InsightWeatherResponse): WeatherSnapshot | null {
   const solData = data[sol];
-  if (!solData || typeof solData === 'string' || Array.isArray(solData)) return null;
+  if (!isSolData(solData)) return null;
 
   return {
     sol: Number(sol),
