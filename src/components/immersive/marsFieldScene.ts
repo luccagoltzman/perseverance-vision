@@ -251,7 +251,8 @@ export function createMarsFieldScene({
           remotePlayers!.upsert(state, state.name || 'Explorador');
         }
       },
-      onLaserShot: (_id, x, z, y, yaw) => {
+      onLaserShot: (id, x, z, y, yaw) => {
+        if (id === multiplayer.id) return;
         laserBeams.spawn(x, y, z, yaw);
       },
       onLocalRespawn: (player) => {
@@ -329,15 +330,12 @@ export function createMarsFieldScene({
     const wave = inputLocked ? false : raw.wave;
     const photo = inputLocked ? false : raw.photo;
     const interact = inputLocked ? false : raw.interact;
-    const shoot = inputLocked ? false : raw.shoot;
+    const wantsShoot =
+      !inputLocked && raw.shoot && Boolean(combat?.laserEquipped) && alive && mode === 'foot' && !transition;
 
     localLaser.visible = Boolean(
       combat?.laserEquipped && alive && mode === 'foot' && !transition,
     );
-
-    if (shoot && combat?.laserEquipped && alive && mode === 'foot' && !transition) {
-      multiplayer?.shoot();
-    }
 
     const nearestRover =
       mode === 'foot' && !transition
@@ -475,6 +473,13 @@ export function createMarsFieldScene({
       posX = rover.root.position.x;
       posZ = rover.root.position.z;
       posY = 0;
+    }
+
+    if (wantsShoot) {
+      const fired = multiplayer ? multiplayer.shoot() : true;
+      if (fired) {
+        laserBeams.spawn(posX, posY, posZ, playerYaw);
+      }
     }
 
     if (photo && onPhotoCapture) {

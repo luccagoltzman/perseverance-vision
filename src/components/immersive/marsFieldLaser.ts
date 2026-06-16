@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { LASER_RANGE } from '@/constants/fieldCombat';
 
+const BEAM_DURATION_MS = 280;
+
 export function createLaserRifle(): THREE.Group {
   const root = new THREE.Group();
   const body = new THREE.Mesh(
@@ -30,8 +32,8 @@ export function createLaserRifle(): THREE.Group {
   return root;
 }
 
-export interface LaserBeam {
-  line: THREE.Line;
+interface LaserBeam {
+  mesh: THREE.Mesh;
   expiresAt: number;
 }
 
@@ -43,46 +45,49 @@ export class LaserBeamManager {
     this.scene = scene;
   }
 
-  spawn(x: number, y: number, z: number, yaw: number, height = 1.2): void {
-    const start = new THREE.Vector3(x, y + height, z);
-    const end = new THREE.Vector3(
-      x + Math.sin(yaw) * LASER_RANGE,
-      y + height,
-      z + Math.cos(yaw) * LASER_RANGE,
+  spawn(x: number, y: number, z: number, yaw: number, height = 1.15): void {
+    const length = LASER_RANGE;
+    const centerY = y + height;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.14, length),
+      new THREE.MeshBasicMaterial({
+        color: 0x40f0ff,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+      }),
     );
-
-    const geo = new THREE.BufferGeometry().setFromPoints([start, end]);
-    const mat = new THREE.LineBasicMaterial({
-      color: 0x00eaff,
-      transparent: true,
-      opacity: 0.92,
-      linewidth: 2,
-    });
-    const line = new THREE.Line(geo, mat);
-    this.scene.add(line);
-    this.beams.push({ line, expiresAt: performance.now() + 120 });
+    mesh.position.set(
+      x + Math.sin(yaw) * (length * 0.5),
+      centerY,
+      z + Math.cos(yaw) * (length * 0.5),
+    );
+    mesh.rotation.y = yaw;
+    mesh.renderOrder = 10;
+    this.scene.add(mesh);
+    this.beams.push({ mesh, expiresAt: performance.now() + BEAM_DURATION_MS });
   }
 
   update(): void {
     const now = performance.now();
     this.beams = this.beams.filter((beam) => {
       if (now >= beam.expiresAt) {
-        this.scene.remove(beam.line);
-        beam.line.geometry.dispose();
-        (beam.line.material as THREE.Material).dispose();
+        this.scene.remove(beam.mesh);
+        beam.mesh.geometry.dispose();
+        (beam.mesh.material as THREE.Material).dispose();
         return false;
       }
-      const mat = beam.line.material as THREE.LineBasicMaterial;
-      mat.opacity = Math.max(0, (beam.expiresAt - now) / 120);
+      const mat = beam.mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0.15, ((beam.expiresAt - now) / BEAM_DURATION_MS) * 0.92);
       return true;
     });
   }
 
   dispose(): void {
     for (const beam of this.beams) {
-      this.scene.remove(beam.line);
-      beam.line.geometry.dispose();
-      (beam.line.material as THREE.Material).dispose();
+      this.scene.remove(beam.mesh);
+      beam.mesh.geometry.dispose();
+      (beam.mesh.material as THREE.Material).dispose();
     }
     this.beams = [];
   }

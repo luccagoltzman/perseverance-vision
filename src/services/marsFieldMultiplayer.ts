@@ -5,7 +5,7 @@ import type {
   LocalCombatState,
   ServerMessage,
 } from '@/types/multiplayer';
-import { MAX_HP } from '@/constants/fieldCombat';
+import { MAX_HP, SHOOT_COOLDOWN_MS } from '@/constants/fieldCombat';
 
 const STORAGE_KEY = 'mars-field-name';
 
@@ -87,6 +87,7 @@ export class MarsFieldMultiplayerClient {
   private lastSend = 0;
   private myId: string | null = null;
   private waveUntil = 0;
+  private lastLocalShot = 0;
   private combat: LocalCombatState = { ...DEFAULT_COMBAT };
 
   addCallbacks(callbacks: MultiplayerCallbacks): () => void {
@@ -282,10 +283,16 @@ export class MarsFieldMultiplayerClient {
     this.ws.send(JSON.stringify({ type: 'wave' } satisfies ClientMessage));
   }
 
-  shoot(): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    if (!this.combat.alive || !this.combat.laserEquipped) return;
+  shoot(): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (!this.combat.alive || !this.combat.laserEquipped) return false;
+
+    const now = Date.now();
+    if (now - this.lastLocalShot < SHOOT_COOLDOWN_MS) return false;
+    this.lastLocalShot = now;
+
     this.ws.send(JSON.stringify({ type: 'shoot' } satisfies ClientMessage));
+    return true;
   }
 
   equipLaser(): void {

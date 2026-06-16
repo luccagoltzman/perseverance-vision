@@ -79,7 +79,7 @@ export class FieldInputController {
   }
 
   queueShoot(): void {
-    if (!this.paused) this.shootQueued = true;
+    this.shootQueued = true;
   }
 
   setCombatLocked(locked: boolean): void {
@@ -89,7 +89,17 @@ export class FieldInputController {
   private combatLocked = false;
 
   snapshot(): FieldInputSnapshot {
-    if (this.paused || this.combatLocked) return { ...EMPTY_SNAPSHOT };
+    if (this.combatLocked) {
+      this.shootQueued = false;
+      return { ...EMPTY_SNAPSHOT };
+    }
+
+    const shoot = this.shootQueued;
+    this.shootQueued = false;
+
+    if (this.paused) {
+      return { ...EMPTY_SNAPSHOT, shoot };
+    }
 
     let forward = this.touch.forward;
     let turn = this.touch.turn;
@@ -109,8 +119,6 @@ export class FieldInputController {
     this.photoQueued = false;
     const interact = this.interactQueued;
     this.interactQueued = false;
-    const shoot = this.shootQueued;
-    this.shootQueued = false;
 
     return {
       forward: Math.max(-1, Math.min(1, forward)),
@@ -120,7 +128,7 @@ export class FieldInputController {
       wave: wave || this.keys.has('e') || this.touch.wave,
       photo: photo || this.keys.has('p') || this.touch.photo,
       interact: interact || this.keys.has('f') || this.touch.interact,
-      shoot: shoot || this.keys.has('q') || this.touch.shoot,
+      shoot: shoot || this.touch.shoot,
     };
   }
 
@@ -132,9 +140,16 @@ export class FieldInputController {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (this.paused || this.isTypingTarget()) return;
-
     const key = e.key.toLowerCase();
+    if (key === 'q') {
+      if (!this.combatLocked) {
+        this.shootQueued = true;
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (this.paused || this.isTypingTarget()) return;
     if (key === 'e') {
       this.waveQueued = true;
       e.preventDefault();
@@ -147,11 +162,6 @@ export class FieldInputController {
     }
     if (key === 'f') {
       this.interactQueued = true;
-      e.preventDefault();
-      return;
-    }
-    if (key === 'q') {
-      this.shootQueued = true;
       e.preventDefault();
       return;
     }
