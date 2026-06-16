@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { windToAnimationParams } from '@/utils/windPhysics';
-import { animateAvatarWalk, animateAvatarWave, createMarsExplorerAvatar, getWalkBob } from './marsFieldAvatar';
 import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
 import { RemotePlayersManager } from './marsFieldRemotePlayers';
 import { FieldInputController } from './marsFieldInput';
+import { createNameplate } from './marsFieldNameplate';
+import { animateRoverDrive, animateRoverWave, createMarsRover } from './marsFieldRover';
 import { createMarsRocks } from './marsFieldRocks';
 import { createVegetationSystem, updateVegetation } from './marsFieldVegetation';
 import { createMarsWindAudio } from './marsWindAudio';
@@ -14,7 +15,9 @@ export interface MarsFieldSceneOptions {
   windDirection: string;
   reducedMotion: boolean;
   input: FieldInputController;
+  playerName?: string;
   multiplayer?: MarsFieldMultiplayerClient;
+  onPhotoCapture?: (dataUrl: string) => void;
 }
 
 const SKY_VERTEX = /* glsl */ `
@@ -40,11 +43,9 @@ const SKY_FRAGMENT = /* glsl */ `
 `;
 
 const FIELD_LIMIT = 68;
-const WALK_SPEED = 5.5;
-const SPRINT_SPEED = 9.5;
-const TURN_SPEED = 2.4;
-const GRAVITY = -16;
-const JUMP_FORCE = 5.2;
+const WALK_SPEED = 7;
+const SPRINT_SPEED = 11.5;
+const TURN_SPEED = 2.1;
 
 function clampField(value: number): number {
   return Math.max(-FIELD_LIMIT, Math.min(FIELD_LIMIT, value));
@@ -56,7 +57,9 @@ export function createMarsFieldScene({
   windDirection,
   reducedMotion,
   input,
+  playerName = 'Explorador',
   multiplayer,
+  onPhotoCapture,
 }: MarsFieldSceneOptions): () => void {
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -170,15 +173,21 @@ export function createMarsFieldScene({
   );
   scene.add(dust);
 
-  const avatar = createMarsExplorerAvatar();
-  avatar.root.position.set(0, 0, 8);
-  avatar.root.rotation.y = Math.PI;
-  scene.add(avatar.root);
+  const rover = createMarsRover({ accent: 0xf94a1a });
+  rover.root.position.set(0, 0, 8);
+  rover.root.rotation.y = Math.PI;
+  const localNameplate = createNameplate(playerName, 'local');
+  rover.root.add(localNameplate);
+  scene.add(rover.root);
 
-  let remotePlayers: RemotePlayersManager | null = null;
+  const flashOverlay = document.createElement('div');
+  flashOverlay.style.cssText =
+    'position:absolute;inset:0;background:white;opacity:0;pointer-events:none;transition:opacity 0.08s ease-out;z-index:5';
+  container.appendChild(flashOverlay);
+
+  let remotePlayers: RemotePlayersManager | null = new RemotePlayersManager(scene, container);
   let removeMpCallbacks: (() => void) | null = null;
   if (multiplayer) {
-    remotePlayers = new RemotePlayersManager(scene, container);
     removeMpCallbacks = multiplayer.addCallbacks({
       onWelcome: (id, players) => {
         remotePlayers!.syncFromWelcome(players.filter((p) => p.id !== id));
@@ -195,10 +204,8 @@ export function createMarsFieldScene({
     });
   }
 
-  let avatarYaw = Math.PI;
-  let avatarY = 0;
-  let verticalVelocity = 0;
-  let walkPhase = 0;
+  let roverYaw = Math.PI;
+  let drivePhase = 0;
   let localWaveUntil = 0;
   let time = 0;
   let frame = 0;
@@ -238,45 +245,43 @@ export function createMarsFieldScene({
 
     if (!reducedMotion) time += delta;
 
-    const { forward, turn, sprint, jump, wave } = input.snapshot();
+    const { forward, turn, sprint, wave, photo } = input.snapshot();
 
-    avatarYaw += turn * TURN_SPEED * delta;
-    avatar.root.rotation.y = avatarYaw;
+    roverYaw += turn * TURN_SPEED * delta;
+    rover.root.rotation.y = roverYaw;
 
     const speed = sprint ? SPRINT_SPEED : WALK_SPEED;
-    const moveX = Math.sin(avatarYaw) * forward * speed * delta;
-    const moveZ = Math.cos(avatarYaw) * forward * speed * delta;
-    avatar.root.position.x = clampField(avatar.root.position.x + moveX);
-    avatar.root.position.z = clampField(avatar.root.position.z + moveZ);
-
-    if (jump && avatarY <= 0.01) {
-      verticalVelocity = JUMP_FORCE;
-    }
-    verticalVelocity += GRAVITY * delta;
-    avatarY += verticalVelocity * delta;
-    if (avatarY < 0) {
-      avatarY = 0;
-      verticalVelocity = 0;
-    }
+    const moveX = Math.sin(roverYaw) * forward * speed * delta;
+    const moveZ = Math.cos(roverYaw) * forward * speed * delta;
+    rover.root.position.x = clampField(rover.root.position.x + moveX);
+    rover.root.position.z = clampField(rover.root.position.z + moveZ);
 
     const isMoving = forward !== 0;
-    const airborne = avatarY > 0.05;
-    if (isMoving && !airborne) walkPhase += delta * (sprint ? 13 : 9);
+    if (isMoving) drivePhase += delta * (sprint ? 14 : 9);
     if (wave) {
       localWaveUntil = Date.now() + 1800;
       multiplayer?.wave();
     }
     const localWaving = Date.now() < localWaveUntil;
-    animateAvatarWalk(avatar, isMoving, walkPhase, { sprint, airborne });
-    if (localWaving) animateAvatarWave(avatar, true);
-    const bob = airborne ? 0 : getWalkBob(isMoving, walkPhase, sprint);
-    avatar.root.position.y = avatarY + bob;
+    const driveBob = animateRoverDrive(rover, isMoving, sprint, drivePhase);
+    if (localWaving) animateRoverWave(rover);
+    rover.root.position.y = driveBob;
 
-    const camDistance = sprint ? 6 : 5.2;
-    const camHeight = 2.1 + avatarY * 0.35;
-    const lookAhead = 3.5;
-    const targetCamX = avatar.root.position.x - Math.sin(avatarYaw) * camDistance;
-    const targetCamZ = avatar.root.position.z - Math.cos(avatarYaw) * camDistance;
+    if (photo && onPhotoCapture) {
+      flashOverlay.style.opacity = '0.85';
+      window.setTimeout(() => {
+        flashOverlay.style.opacity = '0';
+      }, 80);
+      renderer.render(scene, camera);
+      remotePlayers?.update(0, camera);
+      onPhotoCapture(renderer.domElement.toDataURL('image/png'));
+    }
+
+    const camDistance = sprint ? 8.5 : 7.2;
+    const camHeight = 3.4;
+    const lookAhead = 4.5;
+    const targetCamX = rover.root.position.x - Math.sin(roverYaw) * camDistance;
+    const targetCamZ = rover.root.position.z - Math.cos(roverYaw) * camDistance;
 
     camera.position.lerp(
       new THREE.Vector3(targetCamX, camHeight, targetCamZ),
@@ -284,9 +289,9 @@ export function createMarsFieldScene({
     );
 
     cameraTarget.set(
-      avatar.root.position.x + Math.sin(avatarYaw) * lookAhead,
-      1.25 + avatarY * 0.25,
-      avatar.root.position.z + Math.cos(avatarYaw) * lookAhead,
+      rover.root.position.x + Math.sin(roverYaw) * lookAhead,
+      1.1,
+      rover.root.position.z + Math.cos(roverYaw) * lookAhead,
     );
     camera.lookAt(cameraTarget);
 
@@ -325,10 +330,10 @@ export function createMarsFieldScene({
     }
 
     multiplayer?.sendState({
-      x: avatar.root.position.x,
-      z: avatar.root.position.z,
-      y: avatarY,
-      yaw: avatarYaw,
+      x: rover.root.position.x,
+      z: rover.root.position.z,
+      y: 0,
+      yaw: roverYaw,
       sprint,
       moving: isMoving,
     });
@@ -346,7 +351,8 @@ export function createMarsFieldScene({
     remotePlayers?.dispose();
     input.detach();
     stopWindAudio();
-    avatar.dispose();
+    flashOverlay.remove();
+    rover.dispose();
     vegetation.dispose();
     rocks.dispose();
     renderer.dispose();

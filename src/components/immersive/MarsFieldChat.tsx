@@ -37,6 +37,10 @@ export function MarsFieldChat({
     if (draftRef.current) draftRef.current.value = '';
   };
 
+  const stopGameKeys = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
+  };
+
   return (
     <div className="absolute right-4 top-20 z-20 flex flex-col items-end gap-2 pointer-events-none">
       <div className="pointer-events-auto flex items-center gap-2">
@@ -53,7 +57,10 @@ export function MarsFieldChat({
       </div>
 
       {open && (
-        <div className="pointer-events-auto w-[min(100vw-2rem,320px)] rounded-xl bg-black/75 backdrop-blur-md border border-white/15 shadow-xl overflow-hidden flex flex-col max-h-[40vh]">
+        <div
+          className="pointer-events-auto w-[min(100vw-2rem,320px)] rounded-xl bg-black/75 backdrop-blur-md border border-white/15 shadow-xl overflow-hidden flex flex-col max-h-[40vh]"
+          onKeyDown={stopGameKeys}
+        >
           <div ref={listRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-[120px]">
             {messages.length === 0 ? (
               <p className="text-xs text-zinc-500 text-center py-4">Nenhuma mensagem ainda. Diga olá!</p>
@@ -80,6 +87,7 @@ export function MarsFieldChat({
               type="text"
               maxLength={160}
               placeholder="Mensagem…"
+              onKeyDown={stopGameKeys}
               className="flex-1 bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 outline-none focus:border-mars-400/50"
             />
             <button

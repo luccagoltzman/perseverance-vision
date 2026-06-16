@@ -298,3 +298,9 @@
   user-select: none;
   transform: translate(-50%, -100%);
 }
+.mars-field-nameplate--local {
+  background: rgba(249, 74, 26, 0.75);
+  border-color: rgba(255, 200, 160, 0.45);
+  color: #fff;
+  font-weight: 600;
+}

@@ -6,6 +6,7 @@ import { createMarsFieldScene } from './marsFieldScene';
 import { FieldInputController } from './marsFieldInput';
 import { MarsFieldTouchControls } from './MarsFieldTouchControls';
 import { MarsFieldChat } from './MarsFieldChat';
+import { MarsFieldPhotoViewer } from './MarsFieldPhotoViewer';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { formatSol } from '@/utils/solConverter';
 import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
@@ -30,6 +31,13 @@ export function MarsWindImmersive({
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<FieldChatMessage[]>([]);
   const [onlineCount, setOnlineCount] = useState(1);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  const photoCaption = useMemo(
+    () =>
+      `Elysium Planitia · Sol ${formatSol(weather.sol)} · vento ${weather.windSpeed.toFixed(1)} m/s ${weather.windDirection}`,
+    [weather],
+  );
 
   const handleClose = useCallback(() => {
     multiplayer.disconnect();
@@ -48,11 +56,33 @@ export function MarsWindImmersive({
   }, [open, multiplayer]);
 
   useEffect(() => {
+    input.setPaused(chatOpen || !!photoUrl);
+  }, [chatOpen, photoUrl, input]);
+
+  useEffect(() => {
     if (!open) return;
 
+    const isTyping = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA';
+    };
+
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
-      if (e.key === 'Enter' && !chatOpen && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === 'Escape') {
+        if (photoUrl) {
+          setPhotoUrl(null);
+          return;
+        }
+        if (chatOpen) {
+          setChatOpen(false);
+          return;
+        }
+        handleClose();
+        return;
+      }
+      if (e.key === 'Enter' && !chatOpen && !isTyping()) {
         e.preventDefault();
         setChatOpen(true);
       }
@@ -66,11 +96,12 @@ export function MarsWindImmersive({
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', handleKey);
     };
-  }, [open, handleClose, chatOpen]);
+  }, [open, handleClose, chatOpen, photoUrl]);
 
   if (!open) return null;
 
   return createPortal(
+    <>
     <div
       className="fixed inset-0 z-[85] bg-black w-screen h-[100dvh] max-h-[100dvh]"
       role="dialog"
@@ -82,7 +113,9 @@ export function MarsWindImmersive({
         windDirection={weather.windDirection}
         reducedMotion={reducedMotion}
         input={input}
+        playerName={playerName}
         multiplayer={multiplayer}
+        onPhotoCapture={setPhotoUrl}
       />
 
       <MarsFieldTouchControls input={input} />
@@ -105,10 +138,10 @@ export function MarsWindImmersive({
             Vento de Marte
           </h2>
           <p className="text-xs text-zinc-300 mt-1 max-w-sm leading-relaxed hidden sm:block">
-            <span className="text-white font-medium">W A S D</span> ou setas para andar ·{' '}
-            <span className="text-white font-medium">Shift</span> correr ·{' '}
-            <span className="text-white font-medium">Espaço</span> pular ·{' '}
-            <span className="text-white font-medium">E</span> acenar
+            <span className="text-white font-medium">W A S D</span> ou setas para pilotar o rover ·{' '}
+            <span className="text-white font-medium">Shift</span> acelerar ·{' '}
+            <span className="text-white font-medium">E</span> acenar ·{' '}
+            <span className="text-white font-medium">P</span> tirar foto
           </p>
         </div>
         <button
@@ -129,11 +162,17 @@ export function MarsWindImmersive({
             <HudStat label="Sol" value={formatSol(weather.sol)} />
           </div>
           <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest hidden md:block">
-            Shift correr · Espaço pular · E acenar · Esc sair
+            Shift acelerar · P foto · E acenar · Enter chat · Esc sair
           </p>
         </div>
       </footer>
-    </div>,
+    </div>
+    <MarsFieldPhotoViewer
+      imageUrl={photoUrl}
+      caption={photoCaption}
+      onClose={() => setPhotoUrl(null)}
+    />
+    </>,
     document.body,
   );
 }
@@ -143,13 +182,17 @@ function MarsFieldCanvas({
   windDirection,
   reducedMotion,
   input,
+  playerName,
   multiplayer,
+  onPhotoCapture,
 }: {
   windSpeed: number;
   windDirection: string;
   reducedMotion: boolean;
   input: FieldInputController;
+  playerName: string;
   multiplayer: MarsFieldMultiplayerClient;
+  onPhotoCapture: (url: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -163,11 +206,13 @@ function MarsFieldCanvas({
       windDirection,
       reducedMotion,
       input,
+      playerName,
       multiplayer,
+      onPhotoCapture,
     });
 
     return dispose;
-  }, [windSpeed, windDirection, reducedMotion, input, multiplayer]);
+  }, [windSpeed, windDirection, reducedMotion, input, playerName, multiplayer, onPhotoCapture]);
 
   return (
     <div
