@@ -72,6 +72,15 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    proxy: {
+      '/ws': {
+        target: 'http://localhost:3001',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

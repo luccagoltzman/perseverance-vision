@@ -9,7 +9,7 @@ export interface MarsExplorerAvatar {
   dispose: () => void;
 }
 
-export function createMarsExplorerAvatar(): MarsExplorerAvatar {
+export function createMarsExplorerAvatar(options?: { accent?: number }): MarsExplorerAvatar {
   const root = new THREE.Group();
   const materials: THREE.Material[] = [];
 
@@ -20,7 +20,7 @@ export function createMarsExplorerAvatar(): MarsExplorerAvatar {
   };
 
   const suit = mat(0xddd8d0);
-  const accent = mat(0xf94a1a);
+  const accent = mat(options?.accent ?? 0xf94a1a);
   const dark = mat(0x3a3a3a);
   const visor = mat(0x5a9ec4, { transparent: true, opacity: 0.82 });
   const pack = mat(0xb8b0a8);
@@ -132,4 +132,11 @@ export function animateAvatarWalk(
 export function getWalkBob(moving: boolean, phase: number, sprint: boolean): number {
   if (!moving) return 0;
   return Math.abs(Math.sin(phase * (sprint ? 2.6 : 2))) * (sprint ? 0.06 : 0.04);
+}
+
+export function animateAvatarWave(avatar: MarsExplorerAvatar, waving: boolean): void {
+  if (!waving) return;
+  avatar.rightArm.rotation.x = -2.35;
+  avatar.rightArm.rotation.z = -0.25;
+  avatar.leftArm.rotation.x = -0.25;
 }

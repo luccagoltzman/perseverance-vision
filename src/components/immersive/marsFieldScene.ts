@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { windToAnimationParams } from '@/utils/windPhysics';
-import { animateAvatarWalk, createMarsExplorerAvatar, getWalkBob } from './marsFieldAvatar';
+import { animateAvatarWalk, animateAvatarWave, createMarsExplorerAvatar, getWalkBob } from './marsFieldAvatar';
+import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
+import { RemotePlayersManager } from './marsFieldRemotePlayers';
 import { FieldInputController } from './marsFieldInput';
 import { createMarsRocks } from './marsFieldRocks';
 import { createVegetationSystem, updateVegetation } from './marsFieldVegetation';
@@ -12,6 +14,7 @@ export interface MarsFieldSceneOptions {
   windDirection: string;
   reducedMotion: boolean;
   input: FieldInputController;
+  multiplayer?: MarsFieldMultiplayerClient;
 }
 
 const SKY_VERTEX = /* glsl */ `
@@ -53,6 +56,7 @@ export function createMarsFieldScene({
   windDirection,
   reducedMotion,
   input,
+  multiplayer,
 }: MarsFieldSceneOptions): () => void {
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -171,10 +175,31 @@ export function createMarsFieldScene({
   avatar.root.rotation.y = Math.PI;
   scene.add(avatar.root);
 
+  let remotePlayers: RemotePlayersManager | null = null;
+  let removeMpCallbacks: (() => void) | null = null;
+  if (multiplayer) {
+    remotePlayers = new RemotePlayersManager(scene, container);
+    removeMpCallbacks = multiplayer.addCallbacks({
+      onWelcome: (id, players) => {
+        remotePlayers!.syncFromWelcome(players.filter((p) => p.id !== id));
+      },
+      onPlayerJoined: (player) => {
+        if (player.id !== multiplayer.id) remotePlayers!.upsert(player, player.name);
+      },
+      onPlayerLeft: (id) => remotePlayers!.remove(id),
+      onPlayerState: (state) => {
+        if (state.id !== multiplayer.id) {
+          remotePlayers!.upsert(state, state.name || 'Explorador');
+        }
+      },
+    });
+  }
+
   let avatarYaw = Math.PI;
   let avatarY = 0;
   let verticalVelocity = 0;
   let walkPhase = 0;
+  let localWaveUntil = 0;
   let time = 0;
   let frame = 0;
   let lastFrameTime = performance.now();
@@ -193,6 +218,7 @@ export function createMarsFieldScene({
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+    remotePlayers?.resize();
   };
 
   const ro = new ResizeObserver(resize);
@@ -212,7 +238,7 @@ export function createMarsFieldScene({
 
     if (!reducedMotion) time += delta;
 
-    const { forward, turn, sprint, jump } = input.snapshot();
+    const { forward, turn, sprint, jump, wave } = input.snapshot();
 
     avatarYaw += turn * TURN_SPEED * delta;
     avatar.root.rotation.y = avatarYaw;
@@ -236,7 +262,13 @@ export function createMarsFieldScene({
     const isMoving = forward !== 0;
     const airborne = avatarY > 0.05;
     if (isMoving && !airborne) walkPhase += delta * (sprint ? 13 : 9);
+    if (wave) {
+      localWaveUntil = Date.now() + 1800;
+      multiplayer?.wave();
+    }
+    const localWaving = Date.now() < localWaveUntil;
     animateAvatarWalk(avatar, isMoving, walkPhase, { sprint, airborne });
+    if (localWaving) animateAvatarWave(avatar, true);
     const bob = airborne ? 0 : getWalkBob(isMoving, walkPhase, sprint);
     avatar.root.position.y = avatarY + bob;
 
@@ -292,6 +324,16 @@ export function createMarsFieldScene({
       positions.needsUpdate = true;
     }
 
+    multiplayer?.sendState({
+      x: avatar.root.position.x,
+      z: avatar.root.position.z,
+      y: avatarY,
+      yaw: avatarYaw,
+      sprint,
+      moving: isMoving,
+    });
+
+    remotePlayers?.update(delta, camera);
     renderer.render(scene, camera);
   };
 
@@ -300,6 +342,8 @@ export function createMarsFieldScene({
   return () => {
     cancelAnimationFrame(frame);
     ro.disconnect();
+    removeMpCallbacks?.();
+    remotePlayers?.dispose();
     input.detach();
     stopWindAudio();
     avatar.dispose();

@@ -3,12 +3,14 @@ export interface FieldInputSnapshot {
   turn: number;
   sprint: boolean;
   jump: boolean;
+  wave: boolean;
 }
 
 export class FieldInputController {
   private keys = new Set<string>();
-  touch: FieldInputSnapshot = { forward: 0, turn: 0, sprint: false, jump: false };
+  touch: FieldInputSnapshot = { forward: 0, turn: 0, sprint: false, jump: false, wave: false };
   private jumpQueued = false;
+  private waveQueued = false;
 
   private static readonly MOVE_KEYS = new Set([
     'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
@@ -25,12 +27,17 @@ export class FieldInputController {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
     this.keys.clear();
-    this.touch = { forward: 0, turn: 0, sprint: false, jump: false };
+    this.touch = { forward: 0, turn: 0, sprint: false, jump: false, wave: false };
     this.jumpQueued = false;
+    this.waveQueued = false;
   }
 
   queueJump(): void {
     this.jumpQueued = true;
+  }
+
+  queueWave(): void {
+    this.waveQueued = true;
   }
 
   snapshot(): FieldInputSnapshot {
@@ -46,12 +53,15 @@ export class FieldInputController {
 
     const jump = this.jumpQueued;
     this.jumpQueued = false;
+    const wave = this.waveQueued;
+    this.waveQueued = false;
 
     return {
       forward: Math.max(-1, Math.min(1, forward)),
       turn: Math.max(-1, Math.min(1, turn)),
       sprint,
       jump: jump || this.keys.has(' ') || this.touch.jump,
+      wave: wave || this.keys.has('e') || this.touch.wave,
     };
   }
 
@@ -59,6 +69,11 @@ export class FieldInputController {
     const key = e.key.toLowerCase();
     if (key === ' ' || key === 'spacebar') {
       this.jumpQueued = true;
+      e.preventDefault();
+      return;
+    }
+    if (key === 'e') {
+      this.waveQueued = true;
       e.preventDefault();
       return;
     }

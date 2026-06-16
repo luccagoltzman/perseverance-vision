@@ -1,13 +1,15 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { lazy, Suspense, useState } from 'react';
 import type { WeatherSnapshot } from '@/types/nasa';
 import { MarsWindVegetation } from './MarsWindVegetation';
 import { MarsDustField } from './MarsDustField';
 import { WindCompass } from './WindCompass';
+import { MarsFieldJoinModal } from './MarsFieldJoinModal';
 import { useAnimatedValue } from '@/hooks/useAnimatedValue';
 import { formatSol } from '@/utils/solConverter';
 import { getWindIntensityLabel } from '@/utils/windPhysics';
 import { Button } from '@/components/ui/Button';
+import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
 
 const MarsWindImmersive = lazy(() =>
   import('./MarsWindImmersive').then((m) => ({ default: m.MarsWindImmersive })),
@@ -18,14 +20,29 @@ interface MarsWindHeroProps {
 }
 
 export function MarsWindHero({ weather }: MarsWindHeroProps) {
+  const [joinOpen, setJoinOpen] = useState(false);
   const [immersiveOpen, setImmersiveOpen] = useState(false);
+  const [playerName, setPlayerName] = useState('');
+  const [multiplayer, setMultiplayer] = useState<MarsFieldMultiplayerClient | null>(null);
   const animatedSpeed = useAnimatedValue(weather.windSpeed, 1400);
   const animatedTemp = useAnimatedValue(weather.tempAvg, 1400);
   const intensity = getWindIntensityLabel(weather.windSpeed);
 
+  const handleJoin = (name: string, client: MarsFieldMultiplayerClient) => {
+    setPlayerName(name);
+    setMultiplayer(client);
+    setJoinOpen(false);
+    setImmersiveOpen(true);
+  };
+
+  const handleCloseImmersive = () => {
+    setImmersiveOpen(false);
+    setMultiplayer(null);
+    setPlayerName('');
+  };
+
   return (
     <section className="relative -mx-4 sm:mx-0 sm:rounded-2xl overflow-hidden min-h-[min(72vh,520px)] border-y sm:border border-mars-200 shadow-xl shadow-mars-100/50 dark:border-mars-900/40 dark:shadow-mars-950/50 transition-colors">
-      {/* Céu — claro: pôr do sol terrestre; escuro: céu marciano */}
       <div
         className="absolute inset-0 bg-gradient-to-b from-mars-50 via-mars-100 to-emerald-50 dark:from-[#0a0612] dark:via-[#1a0a08] dark:to-[#0d1a12]"
         aria-hidden
@@ -108,7 +125,7 @@ export function MarsWindHero({ weather }: MarsWindHeroProps) {
             <Button
               type="button"
               className="w-full sm:w-auto shadow-lg shadow-mars-200/50 dark:shadow-mars-900/40"
-              onClick={() => setImmersiveOpen(true)}
+              onClick={() => setJoinOpen(true)}
             >
               Entrar no campo 3D
             </Button>
@@ -121,7 +138,13 @@ export function MarsWindHero({ weather }: MarsWindHeroProps) {
         </div>
       </div>
 
-      {immersiveOpen && (
+      <MarsFieldJoinModal
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoin={handleJoin}
+      />
+
+      {immersiveOpen && multiplayer && (
         <Suspense
           fallback={
             <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black text-white font-mono text-sm">
@@ -132,7 +155,9 @@ export function MarsWindHero({ weather }: MarsWindHeroProps) {
           <MarsWindImmersive
             weather={weather}
             open={immersiveOpen}
-            onClose={() => setImmersiveOpen(false)}
+            onClose={handleCloseImmersive}
+            playerName={playerName}
+            multiplayer={multiplayer}
           />
         </Suspense>
       )}
