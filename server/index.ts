@@ -15,7 +15,7 @@ interface Player {
   waveUntil: number;
 }
 
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = Number(process.env.PORT) || (process.env.NODE_ENV === 'production' ? 8080 : 3001);
 const MAX_PLAYERS = 48;
 const MAX_NAME = 20;
 const MIN_NAME = 2;
