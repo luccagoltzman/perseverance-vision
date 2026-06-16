@@ -224,6 +224,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`Mars Field multiplayer em ws://localhost:${PORT}/ws`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Mars Field multiplayer em port ${PORT} (/ws)`);
 });

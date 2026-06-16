@@ -3,7 +3,8 @@ FROM node:22-alpine
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# postinstall gera ícones PWA — só necessário no build do frontend (Vercel)
+RUN npm ci --ignore-scripts
 
 COPY server ./server
 
