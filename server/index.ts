@@ -64,8 +64,23 @@ function broadcast(payload: unknown, exceptId?: string) {
   }
 }
 
-const httpServer = createServer((_req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+const httpServer = createServer((req, res) => {
+  const cors = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, cors);
+    res.end();
+    return;
+  }
+
+  res.writeHead(200, {
+    ...cors,
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
   res.end(`Mars Field multiplayer — ${players.size} explorador(es) online\n`);
 });
 

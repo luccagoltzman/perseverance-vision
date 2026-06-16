@@ -23,11 +23,25 @@ export function getMultiplayerWsUrl(): string {
   return `${proto}//${window.location.host}/ws`;
 }
 
-/** Garante o path /ws exigido pelo servidor. */
+/** Garante o path /ws e wss em páginas HTTPS (Vercel). */
 function normalizeWsUrl(url: string): string {
-  const trimmed = url.replace(/\/$/, '');
-  if (trimmed.endsWith('/ws')) return trimmed;
-  return `${trimmed}/ws`;
+  let trimmed = url.trim().replace(/\/$/, '');
+  if (!trimmed.endsWith('/ws')) trimmed = `${trimmed}/ws`;
+
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    trimmed = trimmed.replace(/^ws:\/\//i, 'wss://');
+  }
+
+  return trimmed;
+}
+
+/** URL HTTP do servidor (health check) a partir da URL do WebSocket. */
+function getMultiplayerHttpUrl(): string {
+  const ws = getMultiplayerWsUrl();
+  return ws
+    .replace(/^wss:\/\//i, 'https://')
+    .replace(/^ws:\/\//i, 'http://')
+    .replace(/\/ws$/i, '');
 }
 
 export interface MultiplayerCallbacks {
@@ -80,14 +94,46 @@ export class MarsFieldMultiplayerClient {
     storeFieldName(name);
 
     const url = getMultiplayerWsUrl();
-    await new Promise<void>((resolve, reject) => {
+    const maxAttempts = 3;
+    let lastError: Error = new Error('Não foi possível conectar ao servidor multiplayer.');
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.connectOnce(name, url, attempt === 1 ? 12000 : 20000);
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err : lastError;
+        this.disconnect();
+        if (attempt < maxAttempts) {
+          await sleep(1500 * attempt);
+        }
+      }
+    }
+
+    throw new Error(
+      `${lastError.message} Verifique se o servidor Fly está no ar (${url}).`,
+    );
+  }
+
+  private connectOnce(name: string, url: string, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
       this.ws = ws;
+      let settled = false;
+
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        fn();
+      };
 
       const timeout = window.setTimeout(() => {
-        reject(new Error('Tempo esgotado ao conectar ao servidor multiplayer.'));
-        ws.close();
-      }, 8000);
+        finish(() => {
+          reject(new Error('Tempo esgotado ao conectar (servidor pode estar acordando).'));
+          if (ws.readyState === WebSocket.CONNECTING) ws.close();
+        });
+      }, timeoutMs);
 
       ws.onopen = () => {
         this.emit('onConnectionChange', true);
@@ -103,18 +149,20 @@ export class MarsFieldMultiplayerClient {
         }
 
         if (msg.type === 'welcome') {
-          window.clearTimeout(timeout);
-          this.myId = msg.id;
-          this.emit('onWelcome', msg.id, msg.players);
-          this.emit('onOnlineCount', msg.online);
-          resolve();
+          finish(() => {
+            this.myId = msg.id;
+            this.emit('onWelcome', msg.id, msg.players);
+            this.emit('onOnlineCount', msg.online);
+            resolve();
+          });
           return;
         }
 
         if (msg.type === 'error') {
-          window.clearTimeout(timeout);
-          reject(new Error(msg.message));
-          ws.close();
+          finish(() => {
+            reject(new Error(msg.message));
+            ws.close();
+          });
           return;
         }
 
@@ -122,51 +170,45 @@ export class MarsFieldMultiplayerClient {
       };
 
       ws.onerror = () => {
-        window.clearTimeout(timeout);
-        reject(new Error('Não foi possível conectar ao servidor multiplayer.'));
+        finish(() => reject(new Error('Falha na conexão WebSocket com o servidor.')));
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         this.emit('onConnectionChange', false);
-        if (this.myId) {
+        if (!settled) {
+          finish(() =>
+            reject(
+              new Error(
+                event.code === 1006
+                  ? 'Conexão recusada ou servidor offline.'
+                  : `Conexão encerrada (código ${event.code}).`,
+              ),
+            ),
+          );
+        } else if (this.myId) {
           this.myId = null;
         }
       };
     });
   }
 
-  /** Consulta quantos jogadores estão online sem entrar na sala. */
-  peekOnlineCount(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const url = getMultiplayerWsUrl();
-      const ws = new WebSocket(url);
-      const timeout = window.setTimeout(() => {
-        ws.close();
-        reject(new Error('offline'));
-      }, 4000);
+  /** Consulta jogadores online via HTTP (evita abrir WebSocket só para contar). */
+  async peekOnlineCount(): Promise<number> {
+    const httpUrl = getMultiplayerHttpUrl();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'ping' } satisfies ClientMessage));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data as string) as ServerMessage;
-          if (msg.type === 'online') {
-            window.clearTimeout(timeout);
-            ws.close();
-            resolve(msg.count);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-
-      ws.onerror = () => {
-        window.clearTimeout(timeout);
-        reject(new Error('offline'));
-      };
-    });
+    try {
+      const res = await fetch(httpUrl, { signal: controller.signal, cache: 'no-store' });
+      if (!res.ok) throw new Error('offline');
+      const text = await res.text();
+      const match = text.match(/(\d+)\s+explorador/i);
+      return match ? Number(match[1]) : 0;
+    } catch {
+      throw new Error('offline');
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   sendState(state: {
@@ -204,9 +246,15 @@ export class MarsFieldMultiplayerClient {
 
   disconnect(): void {
     if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
+      const ws = this.ws;
       this.ws = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        ws.addEventListener('open', () => ws.close(), { once: true });
+      }
     }
     this.myId = null;
     this.waveUntil = 0;
@@ -251,4 +299,8 @@ export class MarsFieldMultiplayerClient {
         break;
     }
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
