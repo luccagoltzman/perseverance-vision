@@ -14,8 +14,8 @@ export default defineConfig({
         short_name: 'Mars Telemetry',
         description:
           'Telemetria espacial e exploração visual do planeta Marte com dados da NASA.',
-        theme_color: '#0f172a',
-        background_color: '#020617',
+        theme_color: '#fff7f5',
+        background_color: '#fff7f5',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',

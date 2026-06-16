@@ -7,9 +7,9 @@ interface BadgeProps {
 }
 
 const variants = {
-  default: 'bg-space-700 text-slate-300 border-space-600',
-  active: 'bg-mars-600/30 text-mars-300 border-mars-600/50',
-  inactive: 'bg-slate-800 text-slate-500 border-slate-700',
+  default: 'bg-surface-muted text-content-muted border-border dark:bg-space-700 dark:text-slate-300 dark:border-space-600',
+  active: 'bg-mars-100 text-mars-800 border-mars-200 dark:bg-mars-600/30 dark:text-mars-300 dark:border-mars-600/50',
+  inactive: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700',
 };
 
 export function Badge({ children, variant = 'default', count }: BadgeProps) {
@@ -19,7 +19,7 @@ export function Badge({ children, variant = 'default', count }: BadgeProps) {
     >
       {children}
       {count !== undefined && (
-        <span className="bg-space-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-mono">
+        <span className="bg-surface-elevated/80 dark:bg-space-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-mono">
           {count}
         </span>
       )}

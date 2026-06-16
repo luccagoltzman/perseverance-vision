@@ -4,7 +4,7 @@ export function PhotoSkeleton({ count = 8 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="aspect-square rounded-xl bg-space-800/60 border border-space-700/40 animate-pulse"
+          className="aspect-square rounded-xl bg-surface-muted border border-border animate-pulse dark:bg-space-800/60 dark:border-space-700/40"
           style={{ animationDelay: `${i * 80}ms` }}
         />
       ))}

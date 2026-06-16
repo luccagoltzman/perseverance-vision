@@ -9,9 +9,9 @@ export function LoadingSpinner({ size = 'md', label = 'Carregando...' }: Loading
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-8" role="status">
       <div
-        className={`${sizes[size]} border-2 border-mars-600/30 border-t-mars-500 rounded-full animate-spin`}
+        className={`${sizes[size]} border-2 border-mars-200 border-t-mars-500 dark:border-mars-600/30 dark:border-t-mars-500 rounded-full animate-spin`}
       />
-      <span className="text-sm text-slate-500">{label}</span>
+      <span className="text-sm text-content-subtle">{label}</span>
     </div>
   );
 }

@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '@/context/ThemeContext';
 import { Layout } from '@/components/layout/Layout';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { GalleryPage } from '@/features/rovers/GalleryPage';
+import { MarsBootSequence } from '@/components/immersive/MarsBootSequence';
+import { PageTransition } from '@/components/immersive/PageTransition';
 import { useServiceWorker } from '@/hooks/usePWAStatus';
 
 const queryClient = new QueryClient({
@@ -20,8 +23,8 @@ function SWUpdateBanner() {
   if (!needRefresh) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-space-800 border border-space-600 rounded-xl p-4 flex items-center justify-between gap-3 shadow-xl">
-      <p className="text-sm text-slate-300">Nova versão disponível</p>
+    <div className="fixed bottom-20 md:bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-surface-elevated/95 backdrop-blur border border-border rounded-xl p-4 flex items-center justify-between gap-3 shadow-xl dark:bg-space-800/95 dark:border-space-600">
+      <p className="text-sm text-content-muted dark:text-slate-300">Nova versão disponível</p>
       <button
         type="button"
         onClick={() => updateServiceWorker(true)}
@@ -36,15 +39,32 @@ function SWUpdateBanner() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
       <BrowserRouter>
+        <MarsBootSequence />
         <Layout>
           <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/gallery" element={<GalleryPage />} />
+            <Route
+              path="/"
+              element={
+                <PageTransition>
+                  <DashboardPage />
+                </PageTransition>
+              }
+            />
+            <Route
+              path="/gallery"
+              element={
+                <PageTransition>
+                  <GalleryPage />
+                </PageTransition>
+              }
+            />
           </Routes>
         </Layout>
         <SWUpdateBanner />
       </BrowserRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

@@ -11,7 +11,8 @@ import { PhotoGrid } from './PhotoGrid';
 import { PhotoModal } from './PhotoModal';
 import { PhotoSkeleton } from '@/components/ui/PhotoSkeleton';
 import { OfflineScreen } from '@/components/common/OfflineScreen';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { GalleryAtmosphere } from '@/components/immersive/GalleryAtmosphere';
+import { useMarsWeather } from '@/hooks/useMarsWeather';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Badge } from '@/components/ui/Badge';
 import { isNetworkError } from '@/services/api';
@@ -20,6 +21,7 @@ import { getDefaultEarthDate } from '@/services/marsPhotos';
 import { isMarsPhotosServiceError } from '@/services/marsPhotosErrors';
 import { hasMarsVistaKey } from '@/services/marsVistaPhotos';
 import { getRoverManifest } from '@/utils/roverCameras';
+import { explainSol } from '@/utils/laypersonLabels';
 
 const VALID_ROVERS: RoverName[] = ['perseverance', 'curiosity', 'opportunity', 'spirit'];
 
@@ -54,6 +56,7 @@ export function GalleryPage() {
   const [solInput, setSolInput] = useState<string>('');
 
   const isOnline = useOnlineStatus();
+  const { data: marsWeather } = useMarsWeather();
   const estimatedSol = getCurrentSol(rover);
   const { data: maxSol } = useRoverMaxSol(rover);
   const displaySol = maxSol ?? estimatedSol;
@@ -106,11 +109,8 @@ export function GalleryPage() {
 
   if (isLoading) {
     return (
-      <div className="animate-fade-in">
-        <PageHeader
-          title="Galeria Marciana"
-          description="Carregando registros fotográficos..."
-        />
+      <div>
+        <GalleryAtmosphere title="Galeria Marciana" subtitle="Sincronizando feed de imagens..." />
         <PhotoSkeleton count={8} />
       </div>
     );
@@ -132,24 +132,23 @@ export function GalleryPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <PageHeader
+    <div className="space-y-8">
+      <GalleryAtmosphere
         title="Galeria Marciana"
-        description={`Imagens do ${roverInfo.label} — ${filterLabel}`}
-        badge={
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="active">{allPhotos.length} fotos</Badge>
-            {isFetching && !isLoading && (
-              <Badge variant="default">Atualizando…</Badge>
-            )}
-          </div>
-        }
+        subtitle={`${roverInfo.label} · ${filterLabel} · ${allPhotos.length} registros`}
+        windSpeed={marsWeather?.windSpeed}
+        windDirection={marsWeather?.windDirection}
       />
 
+      <div className="flex flex-wrap gap-2 px-1">
+        <Badge variant="active">{allPhotos.length} fotos</Badge>
+        {isFetching && !isLoading && <Badge variant="default">Atualizando…</Badge>}
+      </div>
+
       {!hasMarsVistaKey() && (
-        <div className="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
-          Configure <code className="font-mono text-amber-300">VITE_MARSVISTA_API_KEY</code> para
-          fotos estáveis.{' '}
+        <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 dark:text-amber-200/90 dark:bg-amber-500/10 dark:border-amber-500/20">
+          Configure <code className="font-mono text-amber-700 dark:text-amber-300">VITE_MARSVISTA_API_KEY</code>{' '}
+          para fotos estáveis.{' '}
           <a href="https://marsvista.dev/signin" target="_blank" rel="noopener noreferrer" className="underline">
             Obter chave gratuita
           </a>
@@ -161,16 +160,19 @@ export function GalleryPage() {
         <RoverSelector selected={rover} onChange={handleRoverChange} />
 
         <div>
-          <label htmlFor="sol-input" className="text-xs text-slate-500 uppercase tracking-wider font-medium">
-            Filtrar por Sol
+          <label htmlFor="sol-input" className="text-xs text-content-subtle uppercase tracking-wider font-medium">
+            Filtrar por Sol (dia em Marte)
           </label>
-          <div className="flex gap-2 mt-2">
+          <p className="text-[11px] text-content-muted mt-1 mb-2 leading-relaxed">
+            Um Sol é um dia marciano (~24h39min). Deixe vazio para ver fotos recentes.
+          </p>
+          <div className="flex gap-2 mt-1">
             <input
               id="sol-input"
               type="number"
               min={0}
               max={displaySol}
-              placeholder={`Ex: ${displaySol.toLocaleString('pt-BR')} — vazio = recentes`}
+              placeholder={`Ex: ${displaySol.toLocaleString('pt-BR')}`}
               value={solInput}
               onChange={(e) => setSolInput(e.target.value)}
               className="input-field flex-1"
@@ -179,12 +181,17 @@ export function GalleryPage() {
               <button
                 type="button"
                 onClick={() => setSolInput('')}
-                className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white rounded-xl border border-space-700 hover:border-space-600 transition-colors"
+                className="px-4 py-2 text-xs font-medium text-content-muted hover:text-content rounded-xl border border-border hover:border-mars-300 transition-colors"
               >
                 Limpar
               </button>
             )}
           </div>
+          {solInput && Number(solInput) > 0 && (
+            <p className="text-xs text-mars-700 dark:text-mars-400 mt-2 font-medium">
+              {explainSol(Number(solInput), rover).headline}
+            </p>
+          )}
         </div>
 
         <CameraFilter

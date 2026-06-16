@@ -36,7 +36,7 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-space-800/80 bg-space-950/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+      className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-border bg-surface-elevated/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
       aria-label="Navegação principal"
     >
       <div className="flex items-stretch justify-around max-w-lg mx-auto">
@@ -47,7 +47,7 @@ export function BottomNav() {
               key={item.path}
               to={item.path}
               className={`relative flex flex-1 flex-col items-center gap-1 py-3 px-4 transition-colors ${
-                isActive ? 'text-mars-400' : 'text-slate-500 active:text-slate-300'
+                isActive ? 'text-mars-600 dark:text-mars-400' : 'text-content-subtle active:text-content-muted'
               }`}
             >
               {item.icon(isActive)}
