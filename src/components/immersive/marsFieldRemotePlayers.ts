@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type { FieldPlayerState } from '@/types/multiplayer';
+import {
+  animateAvatarWalk,
+  animateAvatarWave,
+  createMarsExplorerAvatar,
+  getWalkBob,
+  type MarsExplorerAvatar,
+} from './marsFieldAvatar';
 import { createNameplate } from './marsFieldNameplate';
 import { animateRoverDrive, animateRoverWave, createMarsRover, type MarsRover } from './marsFieldRover';
 
@@ -9,10 +16,12 @@ const ACCENT_PALETTE = [0xf94a1a, 0x3d8bfd, 0x9b59b6, 0x2ecc71, 0xf1c40f, 0xe74c
 interface RemoteEntry {
   id: string;
   name: string;
+  avatar: MarsExplorerAvatar;
   rover: MarsRover;
   label: ReturnType<typeof createNameplate>;
   target: FieldPlayerState;
   current: { x: number; z: number; y: number; yaw: number };
+  walkPhase: number;
   drivePhase: number;
 }
 
@@ -20,6 +29,11 @@ function accentForId(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i) * (i + 1)) % ACCENT_PALETTE.length;
   return ACCENT_PALETTE[hash] ?? 0xf94a1a;
+}
+
+function mountLabel(label: ReturnType<typeof createNameplate>, host: THREE.Group): void {
+  if (label.parent) label.parent.remove(label);
+  host.add(label);
 }
 
 export class RemotePlayersManager {
@@ -53,33 +67,41 @@ export class RemotePlayersManager {
   upsert(state: FieldPlayerState, name: string): void {
     let entry = this.remotes.get(state.id);
     if (!entry) {
-      const rover = createMarsRover({ accent: accentForId(state.id) });
+      const accent = accentForId(state.id);
+      const avatar = createMarsExplorerAvatar({ accent });
+      const rover = createMarsRover({ accent });
       const label = createNameplate(name, 'remote');
-      rover.root.add(label);
 
       entry = {
         id: state.id,
         name,
+        avatar,
         rover,
         label,
-        target: { ...state, name },
+        target: { ...state, name, inRover: state.inRover ?? false },
         current: { x: state.x, z: state.z, y: state.y, yaw: state.yaw },
+        walkPhase: 0,
         drivePhase: 0,
       };
       this.remotes.set(state.id, entry);
+      this.scene.add(avatar.root);
       this.scene.add(rover.root);
+      rover.root.visible = false;
+      mountLabel(label, avatar.root);
     } else {
       entry.name = name;
       entry.label.element.textContent = name;
     }
 
-    entry.target = { ...entry.target, ...state, name };
+    entry.target = { ...entry.target, ...state, name, inRover: state.inRover ?? entry.target.inRover };
   }
 
   remove(id: string): void {
     const entry = this.remotes.get(id);
     if (!entry) return;
+    this.scene.remove(entry.avatar.root);
     this.scene.remove(entry.rover.root);
+    entry.avatar.dispose();
     entry.rover.dispose();
     this.remotes.delete(id);
   }
@@ -96,14 +118,32 @@ export class RemotePlayersManager {
       entry.current.yaw += (t.yaw - entry.current.yaw) * lerpFactor;
 
       const moving = t.moving;
-      if (moving) entry.drivePhase += delta * (t.sprint ? 14 : 9);
-
+      const inRover = t.inRover;
       const waving = t.waveUntil > now;
-      const driveBob = animateRoverDrive(entry.rover, moving, t.sprint, entry.drivePhase);
-      if (waving) animateRoverWave(entry.rover);
 
-      entry.rover.root.position.set(entry.current.x, entry.current.y + driveBob, entry.current.z);
-      entry.rover.root.rotation.y = entry.current.yaw;
+      entry.avatar.root.visible = !inRover;
+      entry.rover.root.visible = inRover;
+
+      if (inRover) {
+        if (moving) entry.drivePhase += delta * (t.sprint ? 14 : 9);
+        const driveBob = animateRoverDrive(entry.rover, moving, t.sprint, entry.drivePhase);
+        if (waving) animateRoverWave(entry.rover);
+        entry.rover.root.position.set(entry.current.x, entry.current.y + driveBob, entry.current.z);
+        entry.rover.root.rotation.y = entry.current.yaw;
+        mountLabel(entry.label, entry.rover.root);
+      } else {
+        if (moving) entry.walkPhase += delta * (t.sprint ? 13 : 9);
+        const airborne = entry.current.y > 0.05;
+        animateAvatarWalk(entry.avatar, moving, entry.walkPhase, {
+          sprint: t.sprint,
+          airborne,
+        });
+        if (waving) animateAvatarWave(entry.avatar, true);
+        const bob = airborne ? 0 : getWalkBob(moving, entry.walkPhase, t.sprint);
+        entry.avatar.root.position.set(entry.current.x, entry.current.y + bob, entry.current.z);
+        entry.avatar.root.rotation.y = entry.current.yaw;
+        mountLabel(entry.label, entry.avatar.root);
+      }
     }
 
     this.labelRenderer.render(this.scene, camera);

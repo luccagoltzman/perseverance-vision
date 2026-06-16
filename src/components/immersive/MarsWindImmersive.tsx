@@ -32,6 +32,7 @@ export function MarsWindImmersive({
   const [messages, setMessages] = useState<FieldChatMessage[]>([]);
   const [onlineCount, setOnlineCount] = useState(1);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [interactionHint, setInteractionHint] = useState<string | null>(null);
 
   const photoCaption = useMemo(
     () =>
@@ -116,6 +117,7 @@ export function MarsWindImmersive({
         playerName={playerName}
         multiplayer={multiplayer}
         onPhotoCapture={setPhotoUrl}
+        onInteractionHint={setInteractionHint}
       />
 
       <MarsFieldTouchControls input={input} />
@@ -138,10 +140,10 @@ export function MarsWindImmersive({
             Vento de Marte
           </h2>
           <p className="text-xs text-zinc-300 mt-1 max-w-sm leading-relaxed hidden sm:block">
-            <span className="text-white font-medium">W A S D</span> ou setas para pilotar o rover ·{' '}
-            <span className="text-white font-medium">Shift</span> acelerar ·{' '}
-            <span className="text-white font-medium">E</span> acenar ·{' '}
-            <span className="text-white font-medium">P</span> tirar foto
+            Você entra como astronauta · encontre o rover e pressione{' '}
+            <span className="text-white font-medium">F</span> para pilotar ·{' '}
+            <span className="text-white font-medium">Espaço</span> pular ·{' '}
+            <span className="text-white font-medium">P</span> foto
           </p>
         </div>
         <button
@@ -161,9 +163,16 @@ export function MarsWindImmersive({
             <HudStat label="Direção" value={weather.windDirection} />
             <HudStat label="Sol" value={formatSol(weather.sol)} />
           </div>
-          <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest hidden md:block">
-            Shift acelerar · P foto · E acenar · Enter chat · Esc sair
-          </p>
+          <div className="text-right space-y-1">
+            {interactionHint && (
+              <p className="text-xs font-mono text-mars-300 uppercase tracking-wider animate-pulse">
+                {interactionHint}
+              </p>
+            )}
+            <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest hidden md:block">
+              F rover · Shift correr · P foto · Enter chat · Esc sair
+            </p>
+          </div>
         </div>
       </footer>
     </div>
@@ -185,6 +194,7 @@ function MarsFieldCanvas({
   playerName,
   multiplayer,
   onPhotoCapture,
+  onInteractionHint,
 }: {
   windSpeed: number;
   windDirection: string;
@@ -193,6 +203,7 @@ function MarsFieldCanvas({
   playerName: string;
   multiplayer: MarsFieldMultiplayerClient;
   onPhotoCapture: (url: string) => void;
+  onInteractionHint: (hint: string | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -209,10 +220,11 @@ function MarsFieldCanvas({
       playerName,
       multiplayer,
       onPhotoCapture,
+      onInteractionHint,
     });
 
     return dispose;
-  }, [windSpeed, windDirection, reducedMotion, input, playerName, multiplayer, onPhotoCapture]);
+  }, [windSpeed, windDirection, reducedMotion, input, playerName, multiplayer, onPhotoCapture, onInteractionHint]);
 
   return (
     <div

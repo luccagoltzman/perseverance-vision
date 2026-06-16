@@ -13,6 +13,7 @@ interface Player {
   sprint: boolean;
   moving: boolean;
   waveUntil: number;
+  inRover: boolean;
 }
 
 const PORT = Number(process.env.PORT) || (process.env.NODE_ENV === 'production' ? 8080 : 3001);
@@ -46,6 +47,7 @@ function playerSnapshot(p: Player) {
     sprint: p.sprint,
     moving: p.moving,
     waveUntil: p.waveUntil,
+    inRover: p.inRover,
   };
 }
 
@@ -140,6 +142,7 @@ wss.on('connection', (ws) => {
         sprint: false,
         moving: false,
         waveUntil: 0,
+        inRover: false,
       };
 
       players.set(playerId, player);
@@ -173,6 +176,7 @@ wss.on('connection', (ws) => {
       player.sprint = Boolean(msg.sprint);
       player.moving = Boolean(msg.moving);
       player.waveUntil = Number(msg.waveUntil) || 0;
+      player.inRover = Boolean(msg.inRover);
 
       broadcast(
         {
@@ -185,6 +189,7 @@ wss.on('connection', (ws) => {
           sprint: player.sprint,
           moving: player.moving,
           waveUntil: player.waveUntil,
+          inRover: player.inRover,
         },
         playerId,
       );
@@ -218,6 +223,7 @@ wss.on('connection', (ws) => {
           sprint: player.sprint,
           moving: player.moving,
           waveUntil: player.waveUntil,
+          inRover: player.inRover,
         },
         playerId,
       );

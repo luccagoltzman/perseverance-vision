@@ -5,6 +5,7 @@ export interface FieldInputSnapshot {
   jump: boolean;
   wave: boolean;
   photo: boolean;
+  interact: boolean;
 }
 
 const EMPTY_SNAPSHOT: FieldInputSnapshot = {
@@ -14,6 +15,7 @@ const EMPTY_SNAPSHOT: FieldInputSnapshot = {
   jump: false,
   wave: false,
   photo: false,
+  interact: false,
 };
 
 export class FieldInputController {
@@ -23,6 +25,7 @@ export class FieldInputController {
   private jumpQueued = false;
   private waveQueued = false;
   private photoQueued = false;
+  private interactQueued = false;
 
   private static readonly MOVE_KEYS = new Set([
     'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
@@ -43,6 +46,7 @@ export class FieldInputController {
     this.jumpQueued = false;
     this.waveQueued = false;
     this.photoQueued = false;
+    this.interactQueued = false;
     this.paused = false;
   }
 
@@ -66,6 +70,10 @@ export class FieldInputController {
     if (!this.paused) this.photoQueued = true;
   }
 
+  queueInteract(): void {
+    if (!this.paused) this.interactQueued = true;
+  }
+
   snapshot(): FieldInputSnapshot {
     if (this.paused) return { ...EMPTY_SNAPSHOT };
 
@@ -85,14 +93,17 @@ export class FieldInputController {
     this.waveQueued = false;
     const photo = this.photoQueued;
     this.photoQueued = false;
+    const interact = this.interactQueued;
+    this.interactQueued = false;
 
     return {
       forward: Math.max(-1, Math.min(1, forward)),
       turn: Math.max(-1, Math.min(1, turn)),
       sprint,
-      jump: jump || this.touch.jump,
+      jump: jump || this.keys.has(' ') || this.touch.jump,
       wave: wave || this.keys.has('e') || this.touch.wave,
       photo: photo || this.keys.has('p') || this.touch.photo,
+      interact: interact || this.keys.has('f') || this.touch.interact,
     };
   }
 
@@ -114,6 +125,16 @@ export class FieldInputController {
     }
     if (key === 'p') {
       this.photoQueued = true;
+      e.preventDefault();
+      return;
+    }
+    if (key === 'f') {
+      this.interactQueued = true;
+      e.preventDefault();
+      return;
+    }
+    if (key === ' ' || key === 'spacebar') {
+      this.jumpQueued = true;
       e.preventDefault();
       return;
     }

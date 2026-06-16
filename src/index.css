@@ -304,3 +304,18 @@
   color: #fff;
   font-weight: 600;
 }
+.mars-field-rover-hint {
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6rem;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffe8d0;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(249, 74, 26, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -100%);
+}

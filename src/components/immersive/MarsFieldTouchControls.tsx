@@ -113,14 +113,24 @@ export function MarsFieldTouchControls({ input }: MarsFieldTouchControlsProps) {
         </button>
         <button
           type="button"
-          aria-label="Acenar"
+          aria-label="Entrar ou sair do rover"
           className={`${btn} h-12 px-4 text-xs font-mono uppercase tracking-wider`}
           onPointerDown={(e) => {
             e.preventDefault();
-            input.queueWave();
+            input.queueInteract();
           }}
         >
-          Acenar
+          Rover
+        </button>
+        <button
+          type="button"
+          aria-label="Pular"
+          className={`${btn} w-16 h-16 text-sm font-display`}
+          onPointerDown={start('jump')}
+          onPointerUp={end('jump')}
+          onPointerCancel={end('jump')}
+        >
+          Pulo
         </button>
       </div>
     </div>

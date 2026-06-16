@@ -218,6 +218,7 @@ export class MarsFieldMultiplayerClient {
     yaw: number;
     sprint: boolean;
     moving: boolean;
+    inRover: boolean;
   }): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
@@ -282,6 +283,7 @@ export class MarsFieldMultiplayerClient {
           sprint: msg.sprint,
           moving: msg.moving,
           waveUntil: msg.waveUntil,
+          inRover: msg.inRover ?? false,
         });
         break;
       case 'chat':
