@@ -20,6 +20,26 @@ export function createRoverHintLabel(text: string): CSS2DObject {
   return label;
 }
 
+export function createHealthBar(): CSS2DObject {
+  const el = document.createElement('div');
+  el.className = 'mars-field-healthbar';
+  el.innerHTML =
+    '<div class="mars-field-healthbar__track"><div class="mars-field-healthbar__fill"></div></div>';
+  const label = new CSS2DObject(el);
+  label.position.set(0, 1.75, 0);
+  return label;
+}
+
+export function updateHealthBar(label: CSS2DObject, hp: number, alive: boolean): void {
+  const fill = label.element.querySelector('.mars-field-healthbar__fill') as HTMLElement | null;
+  if (!fill) return;
+  const pct = Math.max(0, Math.min(100, hp));
+  fill.style.width = `${pct}%`;
+  fill.classList.toggle('mars-field-healthbar__fill--low', pct <= 25);
+  fill.classList.toggle('mars-field-healthbar__fill--mid', pct > 25 && pct <= 50);
+  label.element.style.opacity = alive ? '1' : '0.35';
+}
+
 export function mountNameplate(label: CSS2DObject, host: THREE.Object3D): void {
   if (label.parent) label.parent.remove(label);
   host.add(label);

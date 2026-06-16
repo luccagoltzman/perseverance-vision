@@ -319,3 +319,27 @@
   user-select: none;
   transform: translate(-50%, -100%);
 }
+.mars-field-healthbar {
+  width: 3.2rem;
+  pointer-events: none;
+  transform: translate(-50%, 0);
+}
+.mars-field-healthbar__track {
+  height: 0.28rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.mars-field-healthbar__fill {
+  height: 100%;
+  width: 100%;
+  background: #22c55e;
+  transition: width 0.2s ease;
+}
+.mars-field-healthbar__fill--mid {
+  background: #f59e0b;
+}
+.mars-field-healthbar__fill--low {
+  background: #ef4444;
+}

@@ -2,6 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 
+const MAX_HP = 100;
+const LASER_DAMAGE = 25;
+const RESPAWN_MS = 5000;
+const SHOOT_COOLDOWN_MS = 850;
+const LASER_RANGE = 28;
+const LASER_HALF_ANGLE = 0.22;
+
 interface Player {
   id: string;
   name: string;
@@ -14,6 +21,11 @@ interface Player {
   moving: boolean;
   waveUntil: number;
   inRover: boolean;
+  hp: number;
+  alive: boolean;
+  laserEquipped: boolean;
+  respawnAt: number;
+  lastShotAt: number;
 }
 
 const PORT = Number(process.env.PORT) || (process.env.NODE_ENV === 'production' ? 8080 : 3001);
@@ -22,6 +34,7 @@ const MAX_NAME = 20;
 const MIN_NAME = 2;
 
 const players = new Map<string, Player>();
+const respawnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function sanitizeName(raw: string): string | null {
   const trimmed = raw.trim().replace(/\s+/g, ' ');
@@ -48,6 +61,10 @@ function playerSnapshot(p: Player) {
     moving: p.moving,
     waveUntil: p.waveUntil,
     inRover: p.inRover,
+    hp: p.hp,
+    alive: p.alive,
+    laserEquipped: p.laserEquipped,
+    respawnAt: p.respawnAt,
   };
 }
 
@@ -63,6 +80,143 @@ function broadcast(payload: unknown, exceptId?: string) {
     if (p.id !== exceptId && p.ws.readyState === p.ws.OPEN) {
       p.ws.send(data);
     }
+  }
+}
+
+function broadcastAll(payload: unknown) {
+  const data = JSON.stringify(payload);
+  for (const p of players.values()) {
+    if (p.ws.readyState === p.ws.OPEN) p.ws.send(data);
+  }
+}
+
+function randomSpawn() {
+  const spawnAngle = Math.random() * Math.PI * 2;
+  const spawnRadius = 2 + Math.random() * 4;
+  return {
+    x: Math.sin(spawnAngle) * spawnRadius,
+    z: 8 + Math.cos(spawnAngle) * spawnRadius,
+    y: 0,
+    yaw: Math.PI,
+  };
+}
+
+function findLaserTarget(shooter: Player): Player | null {
+  const dirX = Math.sin(shooter.yaw);
+  const dirZ = Math.cos(shooter.yaw);
+  const minDot = Math.cos(LASER_HALF_ANGLE);
+
+  let best: Player | null = null;
+  let bestDist = LASER_RANGE;
+
+  for (const target of players.values()) {
+    if (target.id === shooter.id || !target.alive) continue;
+
+    const dx = target.x - shooter.x;
+    const dz = target.z - shooter.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > LASER_RANGE || dist < 0.6) continue;
+
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const dot = nx * dirX + nz * dirZ;
+    if (dot < minDot) continue;
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = target;
+    }
+  }
+
+  return best;
+}
+
+function scheduleRespawn(player: Player) {
+  const existing = respawnTimers.get(player.id);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(() => {
+    respawnTimers.delete(player.id);
+    respawnPlayer(player.id);
+  }, RESPAWN_MS);
+
+  respawnTimers.set(player.id, timer);
+}
+
+function respawnPlayer(id: string) {
+  const player = players.get(id);
+  if (!player || player.alive) return;
+
+  const spawn = randomSpawn();
+  player.x = spawn.x;
+  player.z = spawn.z;
+  player.y = spawn.y;
+  player.yaw = spawn.yaw;
+  player.hp = MAX_HP;
+  player.alive = true;
+  player.respawnAt = 0;
+  player.laserEquipped = false;
+  player.inRover = false;
+  player.moving = false;
+  player.sprint = false;
+
+  broadcastAll({ type: 'player_respawned', player: playerSnapshot(player) });
+}
+
+function killPlayer(victim: Player, killerId: string | null) {
+  victim.hp = 0;
+  victim.alive = false;
+  victim.respawnAt = Date.now() + RESPAWN_MS;
+  victim.laserEquipped = false;
+  victim.moving = false;
+
+  broadcastAll({
+    type: 'player_died',
+    id: victim.id,
+    respawnAt: victim.respawnAt,
+    killerId,
+  });
+
+  scheduleRespawn(victim);
+}
+
+function applyDamage(victim: Player, attacker: Player, damage: number) {
+  if (!victim.alive) return;
+
+  victim.hp = Math.max(0, victim.hp - damage);
+
+  broadcastAll({
+    type: 'player_hit',
+    victimId: victim.id,
+    attackerId: attacker.id,
+    hp: victim.hp,
+    damage,
+  });
+
+  if (victim.hp <= 0) {
+    killPlayer(victim, attacker.id);
+  }
+}
+
+function handleShoot(shooter: Player) {
+  if (!shooter.alive || !shooter.laserEquipped || shooter.inRover) return;
+
+  const now = Date.now();
+  if (now - shooter.lastShotAt < SHOOT_COOLDOWN_MS) return;
+  shooter.lastShotAt = now;
+
+  broadcastAll({
+    type: 'laser_shot',
+    id: shooter.id,
+    x: shooter.x,
+    z: shooter.z,
+    y: shooter.y,
+    yaw: shooter.yaw,
+  });
+
+  const target = findLaserTarget(shooter);
+  if (target) {
+    applyDamage(target, shooter, LASER_DAMAGE);
   }
 }
 
@@ -128,21 +282,25 @@ wss.on('connection', (ws) => {
       }
 
       playerId = randomUUID();
-      const spawnAngle = Math.random() * Math.PI * 2;
-      const spawnRadius = 2 + Math.random() * 4;
+      const spawn = randomSpawn();
 
       const player: Player = {
         id: playerId,
         name,
         ws,
-        x: Math.sin(spawnAngle) * spawnRadius,
-        z: 8 + Math.cos(spawnAngle) * spawnRadius,
-        y: 0,
-        yaw: Math.PI,
+        x: spawn.x,
+        z: spawn.z,
+        y: spawn.y,
+        yaw: spawn.yaw,
         sprint: false,
         moving: false,
         waveUntil: 0,
         inRover: false,
+        hp: MAX_HP,
+        alive: true,
+        laserEquipped: false,
+        respawnAt: 0,
+        lastShotAt: 0,
       };
 
       players.set(playerId, player);
@@ -156,6 +314,12 @@ wss.on('connection', (ws) => {
         id: playerId,
         players: others,
         online: players.size,
+        self: {
+          hp: player.hp,
+          alive: player.alive,
+          laserEquipped: player.laserEquipped,
+          respawnAt: player.respawnAt,
+        },
       });
 
       broadcast({ type: 'player_joined', player: playerSnapshot(player), online: players.size }, playerId);
@@ -169,6 +333,8 @@ wss.on('connection', (ws) => {
     if (!player) return;
 
     if (msg.type === 'state') {
+      if (!player.alive) return;
+
       player.x = clamp(Number(msg.x), -68, 68);
       player.z = clamp(Number(msg.z), -68, 68);
       player.y = clamp(Number(msg.y), 0, 8);
@@ -182,14 +348,45 @@ wss.on('connection', (ws) => {
         {
           type: 'state',
           id: playerId,
-          x: player.x,
-          z: player.z,
-          y: player.y,
-          yaw: player.yaw,
-          sprint: player.sprint,
-          moving: player.moving,
-          waveUntil: player.waveUntil,
-          inRover: player.inRover,
+          ...playerSnapshot(player),
+        },
+        playerId,
+      );
+      return;
+    }
+
+    if (msg.type === 'equip_laser') {
+      if (!player.alive || player.inRover) return;
+      player.laserEquipped = true;
+      const payload = {
+        type: 'state' as const,
+        id: playerId,
+        ...playerSnapshot(player),
+      };
+      send(player.ws, payload);
+      broadcast(payload, playerId);
+      return;
+    }
+
+    if (msg.type === 'stow_laser') {
+      player.laserEquipped = false;
+      const payload = {
+        type: 'state' as const,
+        id: playerId,
+        ...playerSnapshot(player),
+      };
+      send(player.ws, payload);
+      broadcast(payload, playerId);
+      return;
+    }
+
+    if (msg.type === 'shoot') {
+      handleShoot(player);
+      broadcast(
+        {
+          type: 'state',
+          id: playerId,
+          ...playerSnapshot(player),
         },
         playerId,
       );
@@ -211,19 +408,13 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === 'wave') {
+      if (!player.alive) return;
       player.waveUntil = Date.now() + 1800;
       broadcast(
         {
           type: 'state',
           id: playerId,
-          x: player.x,
-          z: player.z,
-          y: player.y,
-          yaw: player.yaw,
-          sprint: player.sprint,
-          moving: player.moving,
-          waveUntil: player.waveUntil,
-          inRover: player.inRover,
+          ...playerSnapshot(player),
         },
         playerId,
       );
@@ -233,6 +424,11 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (!playerId) return;
     const player = players.get(playerId);
+    const timer = respawnTimers.get(playerId);
+    if (timer) {
+      clearTimeout(timer);
+      respawnTimers.delete(playerId);
+    }
     players.delete(playerId);
     broadcast({ type: 'player_left', id: playerId, online: players.size });
     broadcast({ type: 'online', count: players.size });

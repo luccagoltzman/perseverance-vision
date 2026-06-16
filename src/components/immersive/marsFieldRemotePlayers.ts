@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type { FieldPlayerState } from '@/types/multiplayer';
+import { MAX_HP } from '@/constants/fieldCombat';
 import {
   animateAvatarWalk,
   animateAvatarWave,
@@ -8,7 +9,8 @@ import {
   getWalkBob,
   type MarsExplorerAvatar,
 } from './marsFieldAvatar';
-import { createNameplate } from './marsFieldNameplate';
+import { createHealthBar, createNameplate, updateHealthBar } from './marsFieldNameplate';
+import { createLaserRifle } from './marsFieldLaser';
 import { animateRoverDrive, animateRoverWave, createMarsRover, type MarsRover } from './marsFieldRover';
 
 const ACCENT_PALETTE = [0xf94a1a, 0x3d8bfd, 0x9b59b6, 0x2ecc71, 0xf1c40f, 0xe74c3c, 0x1abc9c];
@@ -18,7 +20,9 @@ interface RemoteEntry {
   name: string;
   avatar: MarsExplorerAvatar;
   rover: MarsRover;
+  laser: THREE.Group;
   label: ReturnType<typeof createNameplate>;
+  healthBar: ReturnType<typeof createHealthBar>;
   target: FieldPlayerState;
   current: { x: number; z: number; y: number; yaw: number };
   walkPhase: number;
@@ -34,6 +38,23 @@ function accentForId(id: string): number {
 function mountLabel(label: ReturnType<typeof createNameplate>, host: THREE.Group): void {
   if (label.parent) label.parent.remove(label);
   host.add(label);
+}
+
+function mountHealthBar(bar: ReturnType<typeof createHealthBar>, host: THREE.Group): void {
+  if (bar.parent) bar.parent.remove(bar);
+  host.add(bar);
+}
+
+function withCombatDefaults(state: FieldPlayerState, name: string): FieldPlayerState {
+  return {
+    ...state,
+    name,
+    hp: state.hp ?? MAX_HP,
+    alive: state.alive ?? true,
+    laserEquipped: state.laserEquipped ?? false,
+    respawnAt: state.respawnAt ?? 0,
+    inRover: state.inRover ?? false,
+  };
 }
 
 export class RemotePlayersManager {
@@ -66,20 +87,29 @@ export class RemotePlayersManager {
 
   upsert(state: FieldPlayerState, name: string): void {
     let entry = this.remotes.get(state.id);
+    const merged = withCombatDefaults(state, name);
+
     if (!entry) {
       const accent = accentForId(state.id);
       const avatar = createMarsExplorerAvatar({ accent });
       const rover = createMarsRover({ accent });
+      const laser = createLaserRifle();
+      laser.visible = false;
+      avatar.root.add(laser);
+
       const label = createNameplate(name, 'remote');
+      const healthBar = createHealthBar();
 
       entry = {
         id: state.id,
         name,
         avatar,
         rover,
+        laser,
         label,
-        target: { ...state, name, inRover: state.inRover ?? false },
-        current: { x: state.x, z: state.z, y: state.y, yaw: state.yaw },
+        healthBar,
+        target: merged,
+        current: { x: merged.x, z: merged.z, y: merged.y, yaw: merged.yaw },
         walkPhase: 0,
         drivePhase: 0,
       };
@@ -88,12 +118,13 @@ export class RemotePlayersManager {
       this.scene.add(rover.root);
       rover.root.visible = false;
       mountLabel(label, avatar.root);
+      mountHealthBar(healthBar, avatar.root);
     } else {
       entry.name = name;
       entry.label.element.textContent = name;
     }
 
-    entry.target = { ...entry.target, ...state, name, inRover: state.inRover ?? entry.target.inRover };
+    entry.target = withCombatDefaults({ ...entry.target, ...state }, name);
   }
 
   remove(id: string): void {
@@ -117,12 +148,15 @@ export class RemotePlayersManager {
       entry.current.y += (t.y - entry.current.y) * lerpFactor;
       entry.current.yaw += (t.yaw - entry.current.yaw) * lerpFactor;
 
-      const moving = t.moving;
-      const inRover = t.inRover;
+      const moving = t.moving && t.alive;
+      const inRover = t.inRover && t.alive;
       const waving = t.waveUntil > now;
 
       entry.avatar.root.visible = !inRover;
       entry.rover.root.visible = inRover;
+      entry.laser.visible = t.laserEquipped && t.alive && !inRover;
+
+      updateHealthBar(entry.healthBar, t.hp, t.alive);
 
       if (inRover) {
         if (moving) entry.drivePhase += delta * (t.sprint ? 14 : 9);
@@ -131,6 +165,7 @@ export class RemotePlayersManager {
         entry.rover.root.position.set(entry.current.x, entry.current.y + driveBob, entry.current.z);
         entry.rover.root.rotation.y = entry.current.yaw;
         mountLabel(entry.label, entry.rover.root);
+        mountHealthBar(entry.healthBar, entry.rover.root);
       } else {
         if (moving) entry.walkPhase += delta * (t.sprint ? 13 : 9);
         const airborne = entry.current.y > 0.05;
@@ -143,6 +178,7 @@ export class RemotePlayersManager {
         entry.avatar.root.position.set(entry.current.x, entry.current.y + bob, entry.current.z);
         entry.avatar.root.rotation.y = entry.current.yaw;
         mountLabel(entry.label, entry.avatar.root);
+        mountHealthBar(entry.healthBar, entry.avatar.root);
       }
     }
 

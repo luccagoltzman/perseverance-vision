@@ -2,8 +2,10 @@ import type {
   ClientMessage,
   FieldChatMessage,
   FieldPlayerState,
+  LocalCombatState,
   ServerMessage,
 } from '@/types/multiplayer';
+import { MAX_HP } from '@/constants/fieldCombat';
 
 const STORAGE_KEY = 'mars-field-name';
 
@@ -23,7 +25,6 @@ export function getMultiplayerWsUrl(): string {
   return `${proto}//${window.location.host}/ws`;
 }
 
-/** Garante o path /ws e wss em páginas HTTPS (Vercel). */
 function normalizeWsUrl(url: string): string {
   let trimmed = url.trim().replace(/\/$/, '');
   if (!trimmed.endsWith('/ws')) trimmed = `${trimmed}/ws`;
@@ -35,7 +36,6 @@ function normalizeWsUrl(url: string): string {
   return trimmed;
 }
 
-/** URL HTTP do servidor (health check) a partir da URL do WebSocket. */
 function getMultiplayerHttpUrl(): string {
   const ws = getMultiplayerWsUrl();
   return ws
@@ -53,6 +53,32 @@ export interface MultiplayerCallbacks {
   onOnlineCount?: (count: number) => void;
   onError?: (message: string) => void;
   onConnectionChange?: (connected: boolean) => void;
+  onCombatChange?: (state: LocalCombatState) => void;
+  onLaserShot?: (id: string, x: number, z: number, y: number, yaw: number) => void;
+  onPlayerHit?: (victimId: string, attackerId: string, hp: number, damage: number) => void;
+  onPlayerDied?: (id: string, respawnAt: number, killerId: string | null) => void;
+  onPlayerRespawned?: (player: FieldPlayerState) => void;
+  onLocalRespawn?: (player: FieldPlayerState) => void;
+}
+
+const DEFAULT_COMBAT: LocalCombatState = {
+  hp: MAX_HP,
+  alive: true,
+  laserEquipped: false,
+  respawnAt: 0,
+};
+
+export function createDefaultCombatState(): LocalCombatState {
+  return { ...DEFAULT_COMBAT };
+}
+
+function normalizeCombatState(partial?: Partial<LocalCombatState>): LocalCombatState {
+  return {
+    hp: partial?.hp ?? DEFAULT_COMBAT.hp,
+    alive: partial?.alive ?? DEFAULT_COMBAT.alive,
+    laserEquipped: partial?.laserEquipped ?? DEFAULT_COMBAT.laserEquipped,
+    respawnAt: partial?.respawnAt ?? DEFAULT_COMBAT.respawnAt,
+  };
 }
 
 export class MarsFieldMultiplayerClient {
@@ -61,6 +87,7 @@ export class MarsFieldMultiplayerClient {
   private lastSend = 0;
   private myId: string | null = null;
   private waveUntil = 0;
+  private combat: LocalCombatState = { ...DEFAULT_COMBAT };
 
   addCallbacks(callbacks: MultiplayerCallbacks): () => void {
     this.listeners.push(callbacks);
@@ -87,6 +114,15 @@ export class MarsFieldMultiplayerClient {
 
   get id(): string | null {
     return this.myId;
+  }
+
+  get combatState(): LocalCombatState {
+    return this.combat;
+  }
+
+  private setCombat(next?: Partial<LocalCombatState>): void {
+    this.combat = normalizeCombatState(next);
+    this.emit('onCombatChange', this.combat);
   }
 
   async connect(name: string): Promise<void> {
@@ -151,6 +187,7 @@ export class MarsFieldMultiplayerClient {
         if (msg.type === 'welcome') {
           finish(() => {
             this.myId = msg.id;
+            this.setCombat(msg.self);
             this.emit('onWelcome', msg.id, msg.players);
             this.emit('onOnlineCount', msg.online);
             resolve();
@@ -192,7 +229,6 @@ export class MarsFieldMultiplayerClient {
     });
   }
 
-  /** Consulta jogadores online via HTTP (evita abrir WebSocket só para contar). */
   async peekOnlineCount(): Promise<number> {
     const httpUrl = getMultiplayerHttpUrl();
     const controller = new AbortController();
@@ -220,7 +256,7 @@ export class MarsFieldMultiplayerClient {
     moving: boolean;
     inRover: boolean;
   }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.combat.alive) return;
 
     const now = performance.now();
     if (now - this.lastSend < 50) return;
@@ -240,9 +276,29 @@ export class MarsFieldMultiplayerClient {
   }
 
   wave(): void {
+    if (!this.combat.alive) return;
     this.waveUntil = Date.now() + 1800;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ type: 'wave' } satisfies ClientMessage));
+  }
+
+  shoot(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.combat.alive || !this.combat.laserEquipped) return;
+    this.ws.send(JSON.stringify({ type: 'shoot' } satisfies ClientMessage));
+  }
+
+  equipLaser(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.combat.alive) return;
+    this.setCombat({ ...this.combat, laserEquipped: true });
+    this.ws.send(JSON.stringify({ type: 'equip_laser' } satisfies ClientMessage));
+  }
+
+  stowLaser(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.setCombat({ ...this.combat, laserEquipped: false });
+    this.ws.send(JSON.stringify({ type: 'stow_laser' } satisfies ClientMessage));
   }
 
   disconnect(): void {
@@ -259,6 +315,7 @@ export class MarsFieldMultiplayerClient {
     }
     this.myId = null;
     this.waveUntil = 0;
+    this.combat = { ...DEFAULT_COMBAT };
     this.emit('onConnectionChange', false);
   }
 
@@ -272,19 +329,55 @@ export class MarsFieldMultiplayerClient {
         this.emit('onPlayerLeft', msg.id);
         this.emit('onOnlineCount', msg.online);
         break;
-      case 'state':
-        this.emit('onPlayerState', {
-          id: msg.id,
-          name: '',
-          x: msg.x,
-          z: msg.z,
-          y: msg.y,
-          yaw: msg.yaw,
-          sprint: msg.sprint,
-          moving: msg.moving,
-          waveUntil: msg.waveUntil,
-          inRover: msg.inRover ?? false,
-        });
+      case 'state': {
+        const state = this.parsePlayerState(msg);
+        if (msg.id === this.myId) {
+          this.setCombat({
+            hp: msg.hp,
+            alive: msg.alive,
+            laserEquipped: msg.laserEquipped,
+            respawnAt: msg.respawnAt,
+          });
+        }
+        this.emit('onPlayerState', state);
+        break;
+      }
+      case 'laser_shot':
+        this.emit('onLaserShot', msg.id, msg.x, msg.z, msg.y, msg.yaw);
+        break;
+      case 'player_hit':
+        if (msg.victimId === this.myId) {
+          this.setCombat({
+            ...this.combat,
+            hp: msg.hp,
+            alive: msg.hp > 0,
+          });
+        }
+        this.emit('onPlayerHit', msg.victimId, msg.attackerId, msg.hp, msg.damage);
+        break;
+      case 'player_died':
+        if (msg.id === this.myId) {
+          this.setCombat({
+            hp: 0,
+            alive: false,
+            laserEquipped: false,
+            respawnAt: msg.respawnAt,
+          });
+        }
+        this.emit('onPlayerDied', msg.id, msg.respawnAt, msg.killerId);
+        break;
+      case 'player_respawned':
+        if (msg.player.id === this.myId) {
+          this.setCombat({
+            hp: msg.player.hp,
+            alive: true,
+            laserEquipped: false,
+            respawnAt: 0,
+          });
+          this.emit('onLocalRespawn', msg.player);
+        }
+        this.emit('onPlayerRespawned', msg.player);
+        this.emit('onPlayerState', msg.player);
         break;
       case 'chat':
         this.emit('onChat', {
@@ -300,6 +393,25 @@ export class MarsFieldMultiplayerClient {
       default:
         break;
     }
+  }
+
+  private parsePlayerState(msg: Extract<ServerMessage, { type: 'state' }>): FieldPlayerState {
+    return {
+      id: msg.id,
+      name: '',
+      x: msg.x,
+      z: msg.z,
+      y: msg.y,
+      yaw: msg.yaw,
+      sprint: msg.sprint,
+      moving: msg.moving,
+      waveUntil: msg.waveUntil,
+      inRover: msg.inRover ?? false,
+      hp: msg.hp ?? MAX_HP,
+      alive: msg.alive ?? true,
+      laserEquipped: msg.laserEquipped ?? false,
+      respawnAt: msg.respawnAt ?? 0,
+    };
   }
 }
 

@@ -3,11 +3,12 @@ import type { FieldInputController } from './marsFieldInput';
 
 interface MarsFieldTouchControlsProps {
   input: FieldInputController;
+  laserEquipped?: boolean;
 }
 
 type TouchAction = 'forward' | 'back' | 'left' | 'right' | 'sprint' | 'jump';
 
-export function MarsFieldTouchControls({ input }: MarsFieldTouchControlsProps) {
+export function MarsFieldTouchControls({ input, laserEquipped = false }: MarsFieldTouchControlsProps) {
   const active = useRef(new Set<TouchAction>());
 
   const apply = useCallback(() => {
@@ -100,6 +101,19 @@ export function MarsFieldTouchControls({ input }: MarsFieldTouchControlsProps) {
         >
           Correr
         </button>
+        {laserEquipped && (
+          <button
+            type="button"
+            aria-label="Atirar laser"
+            className={`${btn} h-12 px-4 text-xs font-mono uppercase tracking-wider border-cyan-400/30`}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              input.queueShoot();
+            }}
+          >
+            Laser
+          </button>
+        )}
         <button
           type="button"
           aria-label="Tirar foto"

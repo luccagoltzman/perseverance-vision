@@ -6,6 +6,7 @@ export interface FieldInputSnapshot {
   wave: boolean;
   photo: boolean;
   interact: boolean;
+  shoot: boolean;
 }
 
 const EMPTY_SNAPSHOT: FieldInputSnapshot = {
@@ -16,6 +17,7 @@ const EMPTY_SNAPSHOT: FieldInputSnapshot = {
   wave: false,
   photo: false,
   interact: false,
+  shoot: false,
 };
 
 export class FieldInputController {
@@ -26,6 +28,7 @@ export class FieldInputController {
   private waveQueued = false;
   private photoQueued = false;
   private interactQueued = false;
+  private shootQueued = false;
 
   private static readonly MOVE_KEYS = new Set([
     'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
@@ -47,6 +50,7 @@ export class FieldInputController {
     this.waveQueued = false;
     this.photoQueued = false;
     this.interactQueued = false;
+    this.shootQueued = false;
     this.paused = false;
   }
 
@@ -74,8 +78,18 @@ export class FieldInputController {
     if (!this.paused) this.interactQueued = true;
   }
 
+  queueShoot(): void {
+    if (!this.paused) this.shootQueued = true;
+  }
+
+  setCombatLocked(locked: boolean): void {
+    this.combatLocked = locked;
+  }
+
+  private combatLocked = false;
+
   snapshot(): FieldInputSnapshot {
-    if (this.paused) return { ...EMPTY_SNAPSHOT };
+    if (this.paused || this.combatLocked) return { ...EMPTY_SNAPSHOT };
 
     let forward = this.touch.forward;
     let turn = this.touch.turn;
@@ -95,6 +109,8 @@ export class FieldInputController {
     this.photoQueued = false;
     const interact = this.interactQueued;
     this.interactQueued = false;
+    const shoot = this.shootQueued;
+    this.shootQueued = false;
 
     return {
       forward: Math.max(-1, Math.min(1, forward)),
@@ -104,6 +120,7 @@ export class FieldInputController {
       wave: wave || this.keys.has('e') || this.touch.wave,
       photo: photo || this.keys.has('p') || this.touch.photo,
       interact: interact || this.keys.has('f') || this.touch.interact,
+      shoot: shoot || this.keys.has('q') || this.touch.shoot,
     };
   }
 
@@ -130,6 +147,11 @@ export class FieldInputController {
     }
     if (key === 'f') {
       this.interactQueued = true;
+      e.preventDefault();
+      return;
+    }
+    if (key === 'q') {
+      this.shootQueued = true;
       e.preventDefault();
       return;
     }

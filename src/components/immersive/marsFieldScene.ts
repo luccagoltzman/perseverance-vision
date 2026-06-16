@@ -10,6 +10,7 @@ import {
   getWalkBob,
 } from './marsFieldAvatar';
 import { createNameplate, mountNameplate } from './marsFieldNameplate';
+import { createLaserRifle, LaserBeamManager } from './marsFieldLaser';
 import { animateRoverDrive, animateRoverWave } from './marsFieldRover';
 import {
   startBoardTransition,
@@ -204,7 +205,12 @@ export function createMarsFieldScene({
   avatar.root.rotation.y = Math.PI;
   const localNameplate = createNameplate(playerName, 'local');
   mountNameplate(localNameplate, avatar.root);
+  const localLaser = createLaserRifle();
+  localLaser.visible = false;
+  avatar.root.add(localLaser);
   scene.add(avatar.root);
+
+  const laserBeams = new LaserBeamManager(scene);
 
   const parkedRovers = createParkedRovers(scene);
   let activeRover: ParkedRoverEntry | null = null;
@@ -217,6 +223,20 @@ export function createMarsFieldScene({
 
   let remotePlayers: RemotePlayersManager | null = new RemotePlayersManager(scene, container);
   let removeMpCallbacks: (() => void) | null = null;
+  const resetLocalPlayer = (x: number, z: number, y: number, yaw: number) => {
+    avatar.root.position.set(x, y, z);
+    avatar.root.rotation.y = yaw;
+    playerYaw = yaw;
+    avatarY = y;
+    verticalVelocity = 0;
+    mode = 'foot';
+    activeRover = null;
+    transition = null;
+    avatar.root.visible = true;
+    localLaser.visible = false;
+    mountNameplate(localNameplate, avatar.root);
+  };
+
   if (multiplayer) {
     removeMpCallbacks = multiplayer.addCallbacks({
       onWelcome: (id, players) => {
@@ -230,6 +250,15 @@ export function createMarsFieldScene({
         if (state.id !== multiplayer.id) {
           remotePlayers!.upsert(state, state.name || 'Explorador');
         }
+      },
+      onLaserShot: (_id, x, z, y, yaw) => {
+        laserBeams.spawn(x, y, z, yaw);
+      },
+      onLocalRespawn: (player) => {
+        resetLocalPlayer(player.x, player.z, player.y, player.yaw);
+      },
+      onPlayerRespawned: (player) => {
+        if (player.id !== multiplayer.id) remotePlayers!.upsert(player, player.name);
       },
     });
   }
@@ -246,6 +275,14 @@ export function createMarsFieldScene({
   let lastFrameTime = performance.now();
 
   input.attach();
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    const combat = multiplayer?.combatState;
+    if (!combat?.alive || !combat.laserEquipped || mode === 'rover' || transition) return;
+    input.queueShoot();
+  };
+  container.addEventListener('pointerdown', onPointerDown);
 
   const stopWindAudio = reducedMotion ? () => {} : createMarsWindAudio(windSpeed);
 
@@ -280,7 +317,11 @@ export function createMarsFieldScene({
     if (!reducedMotion) time += delta;
 
     const raw = input.snapshot();
-    const inputLocked = mode === 'boarding' || mode === 'exiting';
+    const combat = multiplayer?.combatState;
+    const alive = combat?.alive ?? true;
+    input.setCombatLocked(!alive);
+
+    const inputLocked = mode === 'boarding' || mode === 'exiting' || !alive;
     const forward = inputLocked ? 0 : raw.forward;
     const turn = inputLocked ? 0 : raw.turn;
     const sprint = inputLocked ? false : raw.sprint;
@@ -288,6 +329,15 @@ export function createMarsFieldScene({
     const wave = inputLocked ? false : raw.wave;
     const photo = inputLocked ? false : raw.photo;
     const interact = inputLocked ? false : raw.interact;
+    const shoot = inputLocked ? false : raw.shoot;
+
+    localLaser.visible = Boolean(
+      combat?.laserEquipped && alive && mode === 'foot' && !transition,
+    );
+
+    if (shoot && combat?.laserEquipped && alive && mode === 'foot' && !transition) {
+      multiplayer?.shoot();
+    }
 
     const nearestRover =
       mode === 'foot' && !transition
@@ -508,6 +558,7 @@ export function createMarsFieldScene({
     });
 
     remotePlayers?.update(delta, camera);
+    laserBeams.update();
     renderer.render(scene, camera);
   };
 
@@ -519,9 +570,11 @@ export function createMarsFieldScene({
     removeMpCallbacks?.();
     remotePlayers?.dispose();
     input.detach();
+    container.removeEventListener('pointerdown', onPointerDown);
     onInteractionHint?.(null);
     stopWindAudio();
     flashOverlay.remove();
+    laserBeams.dispose();
     avatar.dispose();
     disposeParkedRovers(parkedRovers);
     vegetation.dispose();

@@ -7,9 +7,13 @@ import { FieldInputController } from './marsFieldInput';
 import { MarsFieldTouchControls } from './MarsFieldTouchControls';
 import { MarsFieldChat } from './MarsFieldChat';
 import { MarsFieldPhotoViewer } from './MarsFieldPhotoViewer';
+import { MarsFieldInventory } from './MarsFieldInventory';
+import { MarsFieldCombatHud } from './MarsFieldCombatHud';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { formatSol } from '@/utils/solConverter';
+import type { LocalCombatState } from '@/types/multiplayer';
 import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
+import { createDefaultCombatState } from '@/services/marsFieldMultiplayer';
 
 interface MarsWindImmersiveProps {
   weather: WeatherSnapshot;
@@ -33,6 +37,8 @@ export function MarsWindImmersive({
   const [onlineCount, setOnlineCount] = useState(1);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [interactionHint, setInteractionHint] = useState<string | null>(null);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [combat, setCombat] = useState<LocalCombatState>(createDefaultCombatState);
 
   const photoCaption = useMemo(
     () =>
@@ -51,14 +57,15 @@ export function MarsWindImmersive({
     const remove = multiplayer.addCallbacks({
       onChat: (message) => setMessages((prev) => [...prev, message].slice(-80)),
       onOnlineCount: (count) => setOnlineCount(count),
+      onCombatChange: (state) => setCombat(state ?? createDefaultCombatState()),
     });
 
     return remove;
   }, [open, multiplayer]);
 
   useEffect(() => {
-    input.setPaused(chatOpen || !!photoUrl);
-  }, [chatOpen, photoUrl, input]);
+    input.setPaused(chatOpen || !!photoUrl || inventoryOpen);
+  }, [chatOpen, photoUrl, inventoryOpen, input]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,12 +87,21 @@ export function MarsWindImmersive({
           setChatOpen(false);
           return;
         }
+        if (inventoryOpen) {
+          setInventoryOpen(false);
+          return;
+        }
         handleClose();
         return;
       }
       if (e.key === 'Enter' && !chatOpen && !isTyping()) {
         e.preventDefault();
         setChatOpen(true);
+        return;
+      }
+      if ((e.key === 'i' || e.key === 'I') && !isTyping()) {
+        e.preventDefault();
+        setInventoryOpen((v) => !v);
       }
     };
 
@@ -97,7 +113,7 @@ export function MarsWindImmersive({
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', handleKey);
     };
-  }, [open, handleClose, chatOpen, photoUrl]);
+  }, [open, handleClose, chatOpen, photoUrl, inventoryOpen]);
 
   if (!open) return null;
 
@@ -120,7 +136,23 @@ export function MarsWindImmersive({
         onInteractionHint={setInteractionHint}
       />
 
-      <MarsFieldTouchControls input={input} />
+      <MarsFieldTouchControls input={input} laserEquipped={combat.laserEquipped && combat.alive} />
+
+      <MarsFieldInventory
+        open={inventoryOpen}
+        onClose={() => setInventoryOpen(false)}
+        laserEquipped={combat.laserEquipped}
+        alive={combat.alive}
+        onEquip={() => multiplayer.equipLaser()}
+        onStow={() => multiplayer.stowLaser()}
+      />
+
+      <MarsFieldCombatHud
+        hp={combat.hp}
+        alive={combat.alive}
+        respawnAt={combat.respawnAt}
+        laserEquipped={combat.laserEquipped}
+      />
 
       <MarsFieldChat
         open={chatOpen}
@@ -140,9 +172,9 @@ export function MarsWindImmersive({
             Vento de Marte
           </h2>
           <p className="text-xs text-zinc-300 mt-1 max-w-sm leading-relaxed hidden sm:block">
-            Entre como astronauta · 4 rovers no campo ·{' '}
-            <span className="text-white font-medium">F</span> embarcar/desembarcar ·{' '}
-            <span className="text-white font-medium">P</span> foto
+            Entre como astronauta · <span className="text-white font-medium">I</span> inventário ·{' '}
+            <span className="text-white font-medium">Q</span> atirar ·{' '}
+            <span className="text-white font-medium">F</span> rover
           </p>
         </div>
         <button
@@ -169,7 +201,7 @@ export function MarsWindImmersive({
               </p>
             )}
             <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest hidden md:block">
-              F rover · Shift correr · P foto · Enter chat · Esc sair
+              F rover · I inventário · Q laser · Enter chat · Esc sair
             </p>
           </div>
         </div>
