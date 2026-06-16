@@ -9,13 +9,19 @@ import {
   createMarsExplorerAvatar,
   getWalkBob,
 } from './marsFieldAvatar';
-import { createNameplate, createRoverHintLabel, mountNameplate } from './marsFieldNameplate';
-import { animateRoverDrive, animateRoverWave, createMarsRover } from './marsFieldRover';
+import { createNameplate, mountNameplate } from './marsFieldNameplate';
+import { animateRoverDrive, animateRoverWave } from './marsFieldRover';
 import {
-  exitPositionFromRover,
-  horizontalDistance,
-  INTERACT_RADIUS,
-  PARKED_ROVER,
+  startBoardTransition,
+  startExitTransition,
+  updateBoardingTransition,
+  type BoardingTransition,
+} from './marsFieldBoarding';
+import {
+  createParkedRovers,
+  disposeParkedRovers,
+  findNearestParkedRover,
+  type ParkedRoverEntry,
   type VehicleMode,
 } from './marsFieldVehicle';
 import { createMarsRocks } from './marsFieldRocks';
@@ -200,15 +206,9 @@ export function createMarsFieldScene({
   mountNameplate(localNameplate, avatar.root);
   scene.add(avatar.root);
 
-  const rover = createMarsRover({ accent: 0xf94a1a });
-  rover.root.position.set(PARKED_ROVER.x, 0, PARKED_ROVER.z);
-  rover.root.rotation.y = PARKED_ROVER.yaw;
-  const roverBadge = createRoverHintLabel('Rover');
-  rover.root.add(roverBadge);
-  const roverInteractHint = createRoverHintLabel('F — Entrar');
-  roverInteractHint.visible = false;
-  rover.root.add(roverInteractHint);
-  scene.add(rover.root);
+  const parkedRovers = createParkedRovers(scene);
+  let activeRover: ParkedRoverEntry | null = null;
+  let transition: BoardingTransition | null = null;
 
   const flashOverlay = document.createElement('div');
   flashOverlay.style.cssText =
@@ -279,63 +279,95 @@ export function createMarsFieldScene({
 
     if (!reducedMotion) time += delta;
 
-    const { forward, turn, sprint, jump, wave, photo, interact } = input.snapshot();
+    const raw = input.snapshot();
+    const inputLocked = mode === 'boarding' || mode === 'exiting';
+    const forward = inputLocked ? 0 : raw.forward;
+    const turn = inputLocked ? 0 : raw.turn;
+    const sprint = inputLocked ? false : raw.sprint;
+    const jump = inputLocked ? false : raw.jump;
+    const wave = inputLocked ? false : raw.wave;
+    const photo = inputLocked ? false : raw.photo;
+    const interact = inputLocked ? false : raw.interact;
 
-    const nearRover =
-      mode === 'foot' &&
-      horizontalDistance(
-        avatar.root.position.x,
-        avatar.root.position.z,
-        rover.root.position.x,
-        rover.root.position.z,
-      ) <= INTERACT_RADIUS;
+    const nearestRover =
+      mode === 'foot' && !transition
+        ? findNearestParkedRover(
+            parkedRovers,
+            avatar.root.position.x,
+            avatar.root.position.z,
+            null,
+          )
+        : null;
 
-    roverInteractHint.visible = nearRover;
+    for (const entry of parkedRovers) {
+      entry.interactHint.visible = nearestRover?.id === entry.id;
+    }
 
     if (interact) {
-      if (mode === 'foot' && nearRover) {
-        mode = 'rover';
-        playerYaw = rover.root.rotation.y;
-        avatar.root.visible = false;
-        mountNameplate(localNameplate, rover.root);
-      } else if (mode === 'rover') {
-        mode = 'foot';
-        const exit = exitPositionFromRover(
-          rover.root.position.x,
-          rover.root.position.z,
-          playerYaw,
-        );
-        avatar.root.position.set(clampField(exit.x), avatarY, clampField(exit.z));
-        avatar.root.rotation.y = playerYaw;
+      if (mode === 'foot' && nearestRover) {
+        transition = startBoardTransition(nearestRover, avatar);
+        mode = 'boarding';
+      } else if (mode === 'rover' && activeRover) {
+        transition = startExitTransition(activeRover, playerYaw);
+        mode = 'exiting';
         avatar.root.visible = true;
+        avatar.root.position.copy(transition.from);
         mountNameplate(localNameplate, avatar.root);
       }
     }
 
     onInteractionHint?.(
-      mode === 'foot' && nearRover
-        ? 'F — Entrar no rover'
+      mode === 'foot' && nearestRover
+        ? `F — Entrar no ${nearestRover.label}`
         : mode === 'rover'
           ? 'F — Sair do rover'
-          : null,
+          : mode === 'boarding'
+            ? 'Embarcando…'
+            : mode === 'exiting'
+              ? 'Desembarcando…'
+              : null,
     );
 
-    const turnSpeed = mode === 'foot' ? FOOT_TURN_SPEED : ROVER_TURN_SPEED;
-    const walkSpeed = mode === 'foot' ? FOOT_WALK_SPEED : ROVER_WALK_SPEED;
-    const sprintSpeed = mode === 'foot' ? FOOT_SPRINT_SPEED : ROVER_SPRINT_SPEED;
-
-    playerYaw += turn * turnSpeed * delta;
-
-    const speed = sprint ? sprintSpeed : walkSpeed;
-    const moveX = Math.sin(playerYaw) * forward * speed * delta;
-    const moveZ = Math.cos(playerYaw) * forward * speed * delta;
-
     let isMoving = forward !== 0;
-    let posX = 0;
-    let posZ = 0;
-    let posY = 0;
+    let posX = avatar.root.position.x;
+    let posZ = avatar.root.position.z;
+    let posY = avatarY;
 
-    if (mode === 'foot') {
+    if (transition) {
+      avatar.root.visible = true;
+      const result = updateBoardingTransition(transition, avatar, delta, walkPhase);
+      walkPhase = result.walkPhase;
+      isMoving = true;
+
+      if (result.done) {
+        if (transition.kind === 'board') {
+          mode = 'rover';
+          activeRover = transition.rover;
+          playerYaw = transition.rover.rover.root.rotation.y;
+          avatar.root.visible = false;
+          mountNameplate(localNameplate, activeRover.rover.root);
+        } else {
+          mode = 'foot';
+          avatar.root.position.set(
+            clampField(transition.to.x),
+            avatarY,
+            clampField(transition.to.z),
+          );
+          avatar.root.visible = true;
+          mountNameplate(localNameplate, avatar.root);
+          activeRover = null;
+        }
+        transition = null;
+      }
+
+      posX = avatar.root.position.x;
+      posZ = avatar.root.position.z;
+    } else if (mode === 'foot') {
+      playerYaw += turn * FOOT_TURN_SPEED * delta;
+      const speed = sprint ? FOOT_SPRINT_SPEED : FOOT_WALK_SPEED;
+      const moveX = Math.sin(playerYaw) * forward * speed * delta;
+      const moveZ = Math.cos(playerYaw) * forward * speed * delta;
+
       avatar.root.rotation.y = playerYaw;
       avatar.root.position.x = clampField(avatar.root.position.x + moveX);
       avatar.root.position.z = clampField(avatar.root.position.z + moveZ);
@@ -364,7 +396,18 @@ export function createMarsFieldScene({
       posX = avatar.root.position.x;
       posZ = avatar.root.position.z;
       posY = avatarY;
-    } else {
+    } else if (mode === 'rover' && activeRover) {
+      const rover = activeRover.rover;
+      const turnSpeed = ROVER_TURN_SPEED;
+      const sprintSpeed = ROVER_SPRINT_SPEED;
+      const walkSpeed = ROVER_WALK_SPEED;
+
+      playerYaw += turn * turnSpeed * delta;
+
+      const speed = sprint ? sprintSpeed : walkSpeed;
+      const moveX = Math.sin(playerYaw) * forward * speed * delta;
+      const moveZ = Math.cos(playerYaw) * forward * speed * delta;
+
       rover.root.rotation.y = playerYaw;
       rover.root.position.x = clampField(rover.root.position.x + moveX);
       rover.root.position.z = clampField(rover.root.position.z + moveZ);
@@ -394,10 +437,17 @@ export function createMarsFieldScene({
       onPhotoCapture(renderer.domElement.toDataURL('image/png'));
     }
 
-    const camDistance = mode === 'foot' ? (sprint ? 6 : 5.2) : sprint ? 8.5 : 7.2;
-    const camHeight = mode === 'foot' ? 2.1 + posY * 0.35 : 3.4;
-    const lookAhead = mode === 'foot' ? 3.5 : 4.5;
-    const lookHeight = mode === 'foot' ? 1.25 + posY * 0.25 : 1.1;
+    const camDistance =
+      mode === 'rover'
+        ? sprint
+          ? 8.5
+          : 7.2
+        : sprint
+          ? 6
+          : 5.2;
+    const camHeight = mode === 'rover' ? 3.4 : 2.1 + posY * 0.35;
+    const lookAhead = mode === 'rover' ? 4.5 : 3.5;
+    const lookHeight = mode === 'rover' ? 1.1 : 1.25 + posY * 0.25;
     const targetCamX = posX - Math.sin(playerYaw) * camDistance;
     const targetCamZ = posZ - Math.cos(playerYaw) * camDistance;
 
@@ -473,7 +523,7 @@ export function createMarsFieldScene({
     stopWindAudio();
     flashOverlay.remove();
     avatar.dispose();
-    rover.dispose();
+    disposeParkedRovers(parkedRovers);
     vegetation.dispose();
     rocks.dispose();
     renderer.dispose();

@@ -140,9 +140,8 @@ export function MarsWindImmersive({
             Vento de Marte
           </h2>
           <p className="text-xs text-zinc-300 mt-1 max-w-sm leading-relaxed hidden sm:block">
-            Você entra como astronauta · encontre o rover e pressione{' '}
-            <span className="text-white font-medium">F</span> para pilotar ·{' '}
-            <span className="text-white font-medium">Espaço</span> pular ·{' '}
+            Entre como astronauta · 4 rovers no campo ·{' '}
+            <span className="text-white font-medium">F</span> embarcar/desembarcar ·{' '}
             <span className="text-white font-medium">P</span> foto
           </p>
         </div>
