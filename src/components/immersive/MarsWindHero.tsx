@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { lazy, Suspense, useState } from 'react';
 import type { WeatherSnapshot } from '@/types/nasa';
 import { MarsWindVegetation } from './MarsWindVegetation';
 import { MarsDustField } from './MarsDustField';
@@ -8,11 +9,16 @@ import { formatSol } from '@/utils/solConverter';
 import { getWindIntensityLabel } from '@/utils/windPhysics';
 import { Button } from '@/components/ui/Button';
 
+const MarsWindImmersive = lazy(() =>
+  import('./MarsWindImmersive').then((m) => ({ default: m.MarsWindImmersive })),
+);
+
 interface MarsWindHeroProps {
   weather: WeatherSnapshot;
 }
 
 export function MarsWindHero({ weather }: MarsWindHeroProps) {
+  const [immersiveOpen, setImmersiveOpen] = useState(false);
   const animatedSpeed = useAnimatedValue(weather.windSpeed, 1400);
   const animatedTemp = useAnimatedValue(weather.tempAvg, 1400);
   const intensity = getWindIntensityLabel(weather.windSpeed);
@@ -98,13 +104,38 @@ export function MarsWindHero({ weather }: MarsWindHeroProps) {
             </div>
           </div>
 
-          <Link to="/gallery" className="w-full sm:w-auto">
-            <Button className="w-full sm:w-auto shadow-lg shadow-mars-200/50 dark:shadow-mars-900/40">
-              Explorar superfície →
+          <div className="flex flex-col gap-2 w-full sm:w-auto">
+            <Button
+              type="button"
+              className="w-full sm:w-auto shadow-lg shadow-mars-200/50 dark:shadow-mars-900/40"
+              onClick={() => setImmersiveOpen(true)}
+            >
+              Entrar no campo 3D
             </Button>
-          </Link>
+            <Link to="/gallery" className="w-full sm:w-auto">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                Explorar superfície →
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
+
+      {immersiveOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black text-white font-mono text-sm">
+              Carregando campo 3D…
+            </div>
+          }
+        >
+          <MarsWindImmersive
+            weather={weather}
+            open={immersiveOpen}
+            onClose={() => setImmersiveOpen(false)}
+          />
+        </Suspense>
+      )}
 
       <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-mars-400/50 to-transparent scan-line" />
     </section>
