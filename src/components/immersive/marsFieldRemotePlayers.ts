@@ -45,6 +45,14 @@ function mountHealthBar(bar: ReturnType<typeof createHealthBar>, host: THREE.Gro
   host.add(bar);
 }
 
+function resolveName(state: FieldPlayerState, fallback = ''): string {
+  const fromState = state.name?.trim();
+  if (fromState) return fromState;
+  const fromFallback = fallback.trim();
+  if (fromFallback) return fromFallback;
+  return 'Explorador';
+}
+
 function withCombatDefaults(state: FieldPlayerState, name: string): FieldPlayerState {
   return {
     ...state,
@@ -82,11 +90,12 @@ export class RemotePlayersManager {
   }
 
   syncFromWelcome(players: FieldPlayerState[]): void {
-    for (const p of players) this.upsert(p, p.name);
+    for (const p of players) this.upsert(p);
   }
 
-  upsert(state: FieldPlayerState, name: string): void {
+  upsert(state: FieldPlayerState, nameOverride?: string): void {
     let entry = this.remotes.get(state.id);
+    const name = resolveName(state, nameOverride ?? entry?.name ?? '');
     const merged = withCombatDefaults(state, name);
 
     if (!entry) {
@@ -125,6 +134,12 @@ export class RemotePlayersManager {
     }
 
     entry.target = withCombatDefaults({ ...entry.target, ...state }, name);
+  }
+
+  patchState(id: string, partial: Partial<FieldPlayerState>): void {
+    const entry = this.remotes.get(id);
+    if (!entry) return;
+    entry.target = withCombatDefaults({ ...entry.target, ...partial }, entry.name);
   }
 
   remove(id: string): void {

@@ -160,7 +160,19 @@ function respawnPlayer(id: string) {
   player.moving = false;
   player.sprint = false;
 
-  broadcastAll({ type: 'player_respawned', player: playerSnapshot(player) });
+  const snapshot = playerSnapshot(player);
+  broadcastAll({ type: 'player_respawned', player: snapshot });
+  syncPlayerState(player);
+}
+
+function syncPlayerState(player: Player) {
+  const payload = {
+    type: 'state' as const,
+    id: player.id,
+    ...playerSnapshot(player),
+  };
+  send(player.ws, payload);
+  broadcast(payload, player.id);
 }
 
 function killPlayer(victim: Player, killerId: string | null) {
@@ -177,6 +189,7 @@ function killPlayer(victim: Player, killerId: string | null) {
     killerId,
   });
 
+  syncPlayerState(victim);
   scheduleRespawn(victim);
 }
 
@@ -195,7 +208,10 @@ function applyDamage(victim: Player, attacker: Player, damage: number) {
 
   if (victim.hp <= 0) {
     killPlayer(victim, attacker.id);
+    return;
   }
+
+  syncPlayerState(victim);
 }
 
 function handleShoot(shooter: Player) {
@@ -382,14 +398,7 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'shoot') {
       handleShoot(player);
-      broadcast(
-        {
-          type: 'state',
-          id: playerId,
-          ...playerSnapshot(player),
-        },
-        playerId,
-      );
+      syncPlayerState(player);
       return;
     }
 

@@ -243,23 +243,31 @@ export function createMarsFieldScene({
         remotePlayers!.syncFromWelcome(players.filter((p) => p.id !== id));
       },
       onPlayerJoined: (player) => {
-        if (player.id !== multiplayer.id) remotePlayers!.upsert(player, player.name);
+        if (player.id !== multiplayer.id) remotePlayers!.upsert(player);
       },
       onPlayerLeft: (id) => remotePlayers!.remove(id),
       onPlayerState: (state) => {
-        if (state.id !== multiplayer.id) {
-          remotePlayers!.upsert(state, state.name || 'Explorador');
-        }
+        if (state.id !== multiplayer.id) remotePlayers!.upsert(state);
       },
       onLaserShot: (id, x, z, y, yaw) => {
         if (id === multiplayer.id) return;
         laserBeams.spawn(x, y, z, yaw);
       },
+      onPlayerHit: (victimId, _attackerId, hp) => {
+        if (victimId !== multiplayer.id) {
+          remotePlayers!.patchState(victimId, { hp, alive: hp > 0 });
+        }
+      },
+      onPlayerDied: (id) => {
+        if (id !== multiplayer.id) {
+          remotePlayers!.patchState(id, { hp: 0, alive: false, laserEquipped: false });
+        }
+      },
       onLocalRespawn: (player) => {
         resetLocalPlayer(player.x, player.z, player.y, player.yaw);
       },
       onPlayerRespawned: (player) => {
-        if (player.id !== multiplayer.id) remotePlayers!.upsert(player, player.name);
+        if (player.id !== multiplayer.id) remotePlayers!.upsert(player);
       },
     });
   }

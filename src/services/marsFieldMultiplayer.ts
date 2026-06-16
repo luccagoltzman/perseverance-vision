@@ -89,6 +89,7 @@ export class MarsFieldMultiplayerClient {
   private waveUntil = 0;
   private lastLocalShot = 0;
   private combat: LocalCombatState = { ...DEFAULT_COMBAT };
+  private playerNames = new Map<string, string>();
 
   addCallbacks(callbacks: MultiplayerCallbacks): () => void {
     this.listeners.push(callbacks);
@@ -119,6 +120,21 @@ export class MarsFieldMultiplayerClient {
 
   get combatState(): LocalCombatState {
     return this.combat;
+  }
+
+  getPlayerName(id: string): string {
+    return this.playerNames.get(id) ?? '';
+  }
+
+  private rememberName(id: string, name?: string): void {
+    const trimmed = name?.trim();
+    if (trimmed) this.playerNames.set(id, trimmed);
+  }
+
+  private enrichState(state: FieldPlayerState): FieldPlayerState {
+    if (state.name?.trim()) this.rememberName(state.id, state.name);
+    const name = this.playerNames.get(state.id) ?? state.name ?? '';
+    return { ...state, name };
   }
 
   private setCombat(next?: Partial<LocalCombatState>): void {
@@ -188,8 +204,10 @@ export class MarsFieldMultiplayerClient {
         if (msg.type === 'welcome') {
           finish(() => {
             this.myId = msg.id;
+            this.rememberName(msg.id, name);
+            for (const player of msg.players) this.rememberName(player.id, player.name);
             this.setCombat(msg.self);
-            this.emit('onWelcome', msg.id, msg.players);
+            this.emit('onWelcome', msg.id, msg.players.map((p) => this.enrichState(p)));
             this.emit('onOnlineCount', msg.online);
             resolve();
           });
@@ -322,6 +340,8 @@ export class MarsFieldMultiplayerClient {
     }
     this.myId = null;
     this.waveUntil = 0;
+    this.lastLocalShot = 0;
+    this.playerNames.clear();
     this.combat = { ...DEFAULT_COMBAT };
     this.emit('onConnectionChange', false);
   }
@@ -329,7 +349,7 @@ export class MarsFieldMultiplayerClient {
   private handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
       case 'player_joined':
-        this.emit('onPlayerJoined', msg.player);
+        this.emit('onPlayerJoined', this.enrichState(msg.player));
         this.emit('onOnlineCount', msg.online);
         break;
       case 'player_left':
@@ -337,7 +357,7 @@ export class MarsFieldMultiplayerClient {
         this.emit('onOnlineCount', msg.online);
         break;
       case 'state': {
-        const state = this.parsePlayerState(msg);
+        const state = this.enrichState(this.parsePlayerState(msg));
         if (msg.id === this.myId) {
           this.setCombat({
             hp: msg.hp,
@@ -373,19 +393,21 @@ export class MarsFieldMultiplayerClient {
         }
         this.emit('onPlayerDied', msg.id, msg.respawnAt, msg.killerId);
         break;
-      case 'player_respawned':
-        if (msg.player.id === this.myId) {
+      case 'player_respawned': {
+        const player = this.enrichState(msg.player);
+        if (player.id === this.myId) {
           this.setCombat({
-            hp: msg.player.hp,
+            hp: player.hp,
             alive: true,
             laserEquipped: false,
             respawnAt: 0,
           });
-          this.emit('onLocalRespawn', msg.player);
+          this.emit('onLocalRespawn', player);
         }
-        this.emit('onPlayerRespawned', msg.player);
-        this.emit('onPlayerState', msg.player);
+        this.emit('onPlayerRespawned', player);
+        this.emit('onPlayerState', player);
         break;
+      }
       case 'chat':
         this.emit('onChat', {
           id: msg.id,
@@ -405,7 +427,7 @@ export class MarsFieldMultiplayerClient {
   private parsePlayerState(msg: Extract<ServerMessage, { type: 'state' }>): FieldPlayerState {
     return {
       id: msg.id,
-      name: '',
+      name: msg.name ?? '',
       x: msg.x,
       z: msg.z,
       y: msg.y,

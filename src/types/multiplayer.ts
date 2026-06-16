@@ -36,6 +36,7 @@ export type ServerMessage =
   | {
       type: 'state';
       id: string;
+      name: string;
       x: number;
       z: number;
       y: number;
