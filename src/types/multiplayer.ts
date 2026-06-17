@@ -68,16 +68,23 @@ export interface CaptureMatchState {
   winner: FieldTeam | 'draw' | null;
 }
 
+export interface ServerFeatures {
+  combat: boolean;
+  capture: boolean;
+  rovers: boolean;
+}
+
 export type ServerMessage =
   | {
       type: 'welcome';
       id: string;
-      team: FieldTeam;
+      team?: FieldTeam;
       players: FieldPlayerState[];
       online: number;
-      self: LocalCombatState;
-      capture: CaptureMatchState;
-      roverSpots: RoverSpotState[];
+      self?: LocalCombatState;
+      capture?: CaptureMatchState;
+      roverSpots?: RoverSpotState[];
+      features?: ServerFeatures;
     }
   | { type: 'player_joined'; player: FieldPlayerState; online: number }
   | { type: 'player_left'; id: string; online: number }
@@ -134,10 +141,11 @@ export type ClientMessage =
       waveUntil: number;
       inRover: boolean;
       roverId?: string | null;
+      laserEquipped?: boolean;
     }
   | { type: 'chat'; text: string }
   | { type: 'wave' }
-  | { type: 'shoot' }
+  | { type: 'shoot'; laserEquipped?: boolean }
   | { type: 'equip_laser' }
   | { type: 'stow_laser' }
   | { type: 'ping' };

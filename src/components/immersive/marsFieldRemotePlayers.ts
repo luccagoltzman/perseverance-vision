@@ -145,12 +145,16 @@ export class RemotePlayersManager {
     }
 
     entry.target = withCombatDefaults({ ...entry.target, ...state }, name);
+    entry.laser.visible =
+      entry.target.laserEquipped && entry.target.alive && !entry.target.inRover;
   }
 
   patchState(id: string, partial: Partial<FieldPlayerState>): void {
     const entry = this.remotes.get(id);
     if (!entry) return;
     entry.target = withCombatDefaults({ ...entry.target, ...partial }, entry.name);
+    entry.laser.visible =
+      entry.target.laserEquipped && entry.target.alive && !entry.target.inRover;
   }
 
   showChatBubble(id: string, text: string): void {

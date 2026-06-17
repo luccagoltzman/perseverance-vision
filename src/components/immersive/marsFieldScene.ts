@@ -594,6 +594,38 @@ export function createMarsFieldScene({
     }
 
     if (wantsShoot) {
+      multiplayer?.sendState(
+        {
+          x: posX,
+          z: posZ,
+          y: posY,
+          yaw: playerYaw,
+          sprint,
+          moving: isMoving,
+          inRover: isInRoverMode(),
+          roverId: currentRoverId(),
+          laserEquipped: combat?.laserEquipped ?? false,
+        },
+        { force: true },
+      );
+    }
+
+    syncParkedRovers();
+
+    multiplayer?.sendState({
+      x: posX,
+      z: posZ,
+      y: posY,
+      yaw: playerYaw,
+      sprint,
+      moving: isMoving,
+      inRover: isInRoverMode(),
+      roverId: currentRoverId(),
+      laserEquipped: combat?.laserEquipped ?? false,
+    });
+    multiplayer?.updateLocalPosition(posX, posZ);
+
+    if (wantsShoot) {
       const fired = multiplayer ? multiplayer.shoot() : true;
       if (fired) {
         laserBeams.spawn(posX, posY, posZ, playerYaw);
@@ -669,20 +701,6 @@ export function createMarsFieldScene({
       }
       positions.needsUpdate = true;
     }
-
-    syncParkedRovers();
-
-    multiplayer?.sendState({
-      x: posX,
-      z: posZ,
-      y: posY,
-      yaw: playerYaw,
-      sprint,
-      moving: isMoving,
-      inRover: isInRoverMode(),
-      roverId: currentRoverId(),
-    });
-    multiplayer?.updateLocalPosition(posX, posZ);
 
     if (captureState?.phase === 'active' && onInteractionHint) {
       const inZone = captureState.zones.some((zone) => {

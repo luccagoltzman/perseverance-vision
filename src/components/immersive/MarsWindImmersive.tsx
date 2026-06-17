@@ -42,6 +42,7 @@ export function MarsWindImmersive({
   const [capture, setCapture] = useState<CaptureMatchState | null>(null);
   const [nearbyCount, setNearbyCount] = useState(0);
   const [myTeam, setMyTeam] = useState(multiplayer.team);
+  const [serverCombat, setServerCombat] = useState(multiplayer.supportsCombat);
 
   const photoCaption = useMemo(
     () =>
@@ -64,11 +65,13 @@ export function MarsWindImmersive({
       onCaptureUpdate: (state) => setCapture(state),
       onCaptureEnded: (state) => setCapture(state),
       onNearbyCountChange: (count) => setNearbyCount(count),
+      onServerFeatures: (features) => setServerCombat(features?.combat ?? false),
     });
 
     setCapture(multiplayer.captureState);
     setMyTeam(multiplayer.team);
     setNearbyCount(multiplayer.getNearbyCount());
+    setServerCombat(multiplayer.supportsCombat);
 
     return remove;
   }, [open, multiplayer]);
@@ -158,6 +161,19 @@ export function MarsWindImmersive({
       />
 
       <MarsFieldCaptureHud capture={capture} myTeam={myTeam} />
+
+      {!serverCombat && (
+        <div className="absolute top-24 right-4 z-20 pointer-events-none max-w-[260px]">
+          <div className="rounded-xl bg-amber-950/80 backdrop-blur-md border border-amber-500/40 px-3 py-2">
+            <p className="text-[10px] font-mono uppercase tracking-widest text-amber-300">
+              Servidor desatualizado
+            </p>
+            <p className="text-xs text-amber-100/90 mt-1 leading-relaxed">
+              Combate e laser precisam de deploy do servidor Fly. Use <strong className="font-medium">npm run dev:all</strong> para testar localmente.
+            </p>
+          </div>
+        </div>
+      )}
 
       <MarsFieldCombatHud
         hp={combat.hp}

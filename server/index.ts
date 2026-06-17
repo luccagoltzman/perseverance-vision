@@ -25,7 +25,7 @@ const LASER_DAMAGE = 25;
 const RESPAWN_MS = 5000;
 const SHOOT_COOLDOWN_MS = 850;
 const LASER_RANGE = 28;
-const LASER_HALF_ANGLE = 0.22;
+const LASER_HALF_ANGLE = 0.38;
 
 interface Player {
   id: string;
@@ -282,11 +282,11 @@ function applyDamage(victim: Player, attacker: Player, damage: number) {
   syncPlayerState(victim);
 }
 
-function handleShoot(shooter: Player) {
-  if (!shooter.alive || !shooter.laserEquipped || shooter.inRover) return;
+function handleShoot(shooter: Player): boolean {
+  if (!shooter.alive || !shooter.laserEquipped || shooter.inRover) return false;
 
   const now = Date.now();
-  if (now - shooter.lastShotAt < SHOOT_COOLDOWN_MS) return;
+  if (now - shooter.lastShotAt < SHOOT_COOLDOWN_MS) return false;
   shooter.lastShotAt = now;
 
   broadcastAll({
@@ -302,6 +302,8 @@ function handleShoot(shooter: Player) {
   if (target) {
     applyDamage(target, shooter, LASER_DAMAGE);
   }
+
+  return true;
 }
 
 function onPlayerCountChanged() {
@@ -418,6 +420,7 @@ wss.on('connection', (ws) => {
         },
         capture: getCaptureState(),
         roverSpots: getRoverSpots(),
+        features: { combat: true, capture: true, rovers: true },
       });
 
       broadcast({ type: 'player_joined', player: playerSnapshot(player), online: players.size }, playerId);
@@ -451,6 +454,10 @@ wss.on('connection', (ws) => {
         player.yaw,
       );
 
+      if (typeof msg.laserEquipped === 'boolean') {
+        player.laserEquipped = msg.laserEquipped && player.alive && !player.inRover;
+      }
+
       broadcast(
         {
           type: 'state',
@@ -476,8 +483,10 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === 'shoot') {
+      if (Boolean(msg.laserEquipped) && player.alive && !player.inRover) {
+        player.laserEquipped = true;
+      }
       handleShoot(player);
-      syncPlayerState(player);
       return;
     }
 
