@@ -7,6 +7,7 @@ interface MarsFieldChatProps {
   messages: FieldChatMessage[];
   playerName: string;
   onlineCount: number;
+  nearbyCount: number;
   onSend: (text: string) => void;
 }
 
@@ -16,6 +17,7 @@ export function MarsFieldChat({
   messages,
   playerName,
   onlineCount,
+  nearbyCount,
   onSend,
 }: MarsFieldChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -43,17 +45,24 @@ export function MarsFieldChat({
 
   return (
     <div className="absolute right-4 top-20 z-20 flex flex-col items-end gap-2 pointer-events-none">
-      <div className="pointer-events-auto flex items-center gap-2">
-        <span className="text-[10px] font-mono text-zinc-400 bg-black/40 backdrop-blur px-2 py-1 rounded-full border border-white/10">
-          {onlineCount} online
-        </span>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-full bg-black/45 hover:bg-black/60 text-white border border-white/20 backdrop-blur transition-colors"
-        >
-          {open ? 'Fechar chat' : 'Chat (Enter)'}
-        </button>
+      <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+        {nearbyCount > 0 && (
+          <span className="text-[10px] font-mono text-emerald-300 bg-black/45 backdrop-blur px-2 py-1 rounded-full border border-emerald-400/25">
+            {nearbyCount} explorador{nearbyCount === 1 ? '' : 'es'} por perto
+          </span>
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-zinc-400 bg-black/40 backdrop-blur px-2 py-1 rounded-full border border-white/10">
+            {onlineCount} online
+          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="text-xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-full bg-black/45 hover:bg-black/60 text-white border border-white/20 backdrop-blur transition-colors"
+          >
+            {open ? 'Fechar chat' : 'Chat (Enter)'}
+          </button>
+        </div>
       </div>
 
       {open && (
@@ -61,22 +70,33 @@ export function MarsFieldChat({
           className="pointer-events-auto w-[min(100vw-2rem,320px)] rounded-xl bg-black/75 backdrop-blur-md border border-white/15 shadow-xl overflow-hidden flex flex-col max-h-[40vh]"
           onKeyDown={stopGameKeys}
         >
-          <div ref={listRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-[120px]">
+          <p className="text-[10px] font-mono text-zinc-500 px-3 pt-2 uppercase tracking-wider">
+            Chat por proximidade (~22m)
+          </p>
+          <div ref={listRef} className="flex-1 overflow-y-auto p-3 pt-1 space-y-2 min-h-[120px]">
             {messages.length === 0 ? (
-              <p className="text-xs text-zinc-500 text-center py-4">Nenhuma mensagem ainda. Diga olá!</p>
+              <p className="text-xs text-zinc-500 text-center py-4">
+                Aproxime-se de outros exploradores para conversar!
+              </p>
             ) : (
               messages.map((msg) => (
-                <div key={`${msg.ts}-${msg.id}`} className="text-xs leading-relaxed">
-                  <span
-                    className={
-                      msg.name === playerName
-                        ? 'text-mars-300 font-medium'
-                        : 'text-zinc-300 font-medium'
-                    }
-                  >
-                    {msg.name}:
-                  </span>{' '}
-                  <span className="text-zinc-100">{msg.text}</span>
+                <div key={`${msg.ts}-${msg.id}-${msg.text.slice(0, 8)}`} className="text-xs leading-relaxed">
+                  {msg.scope === 'system' ? (
+                    <p className="text-amber-200/90 italic">{msg.text}</p>
+                  ) : (
+                    <>
+                      <span
+                        className={
+                          msg.name === playerName
+                            ? 'text-mars-300 font-medium'
+                            : 'text-zinc-300 font-medium'
+                        }
+                      >
+                        {msg.name}:
+                      </span>{' '}
+                      <span className="text-zinc-100">{msg.text}</span>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -86,7 +106,7 @@ export function MarsFieldChat({
               ref={draftRef}
               type="text"
               maxLength={160}
-              placeholder="Mensagem…"
+              placeholder="Fale com quem está perto…"
               onKeyDown={stopGameKeys}
               className="flex-1 bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 outline-none focus:border-mars-400/50"
             />

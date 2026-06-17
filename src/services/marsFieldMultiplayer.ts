@@ -1,11 +1,15 @@
 import type {
+  CaptureMatchState,
   ClientMessage,
   FieldChatMessage,
   FieldPlayerState,
+  FieldTeam,
   LocalCombatState,
+  RoverSpotState,
   ServerMessage,
 } from '@/types/multiplayer';
 import { MAX_HP, SHOOT_COOLDOWN_MS } from '@/constants/fieldCombat';
+import { NEARBY_INDICATOR_RADIUS } from '@/constants/fieldSocial';
 
 const STORAGE_KEY = 'mars-field-name';
 
@@ -59,6 +63,12 @@ export interface MultiplayerCallbacks {
   onPlayerDied?: (id: string, respawnAt: number, killerId: string | null) => void;
   onPlayerRespawned?: (player: FieldPlayerState) => void;
   onLocalRespawn?: (player: FieldPlayerState) => void;
+  onCaptureUpdate?: (capture: CaptureMatchState) => void;
+  onCaptureEnded?: (capture: CaptureMatchState) => void;
+  onRoverSpots?: (spots: RoverSpotState[]) => void;
+  onSatellitePass?: (durationMs: number, azimuth: number) => void;
+  onProximityChat?: (message: FieldChatMessage) => void;
+  onNearbyCountChange?: (count: number) => void;
 }
 
 const DEFAULT_COMBAT: LocalCombatState = {
@@ -90,6 +100,11 @@ export class MarsFieldMultiplayerClient {
   private lastLocalShot = 0;
   private combat: LocalCombatState = { ...DEFAULT_COMBAT };
   private playerNames = new Map<string, string>();
+  private remoteStates = new Map<string, FieldPlayerState>();
+  private localPos = { x: 0, z: 0 };
+  private capture: CaptureMatchState | null = null;
+  private roverSpotState: RoverSpotState[] = [];
+  private myTeam: FieldTeam | null = null;
 
   addCallbacks(callbacks: MultiplayerCallbacks): () => void {
     this.listeners.push(callbacks);
@@ -122,6 +137,46 @@ export class MarsFieldMultiplayerClient {
     return this.combat;
   }
 
+  get team(): FieldTeam | null {
+    return this.myTeam;
+  }
+
+  get captureState(): CaptureMatchState | null {
+    return this.capture;
+  }
+
+  get roverSpots(): RoverSpotState[] {
+    return this.roverSpotState;
+  }
+
+  getOccupiedRoverIds(): Set<string> {
+    const occupied = new Set<string>();
+    for (const state of this.remoteStates.values()) {
+      if (state.roverId) occupied.add(state.roverId);
+    }
+    return occupied;
+  }
+
+  getKnownPlayers(): FieldPlayerState[] {
+    return [...this.remoteStates.values()];
+  }
+
+  updateLocalPosition(x: number, z: number): void {
+    this.localPos = { x, z };
+    this.emit('onNearbyCountChange', this.getNearbyCount());
+  }
+
+  getNearbyCount(radius = NEARBY_INDICATOR_RADIUS): number {
+    const radiusSq = radius * radius;
+    let count = 0;
+    for (const state of this.remoteStates.values()) {
+      const dx = state.x - this.localPos.x;
+      const dz = state.z - this.localPos.z;
+      if (dx * dx + dz * dz <= radiusSq) count++;
+    }
+    return count;
+  }
+
   getPlayerName(id: string): string {
     return this.playerNames.get(id) ?? '';
   }
@@ -134,7 +189,7 @@ export class MarsFieldMultiplayerClient {
   private enrichState(state: FieldPlayerState): FieldPlayerState {
     if (state.name?.trim()) this.rememberName(state.id, state.name);
     const name = this.playerNames.get(state.id) ?? state.name ?? '';
-    return { ...state, name };
+    return { ...state, name, team: state.team ?? 'alpha', roverId: state.roverId ?? null };
   }
 
   private setCombat(next?: Partial<LocalCombatState>): void {
@@ -204,11 +259,19 @@ export class MarsFieldMultiplayerClient {
         if (msg.type === 'welcome') {
           finish(() => {
             this.myId = msg.id;
+            this.myTeam = msg.team;
+            this.capture = msg.capture;
+            this.roverSpotState = msg.roverSpots;
             this.rememberName(msg.id, name);
-            for (const player of msg.players) this.rememberName(player.id, player.name);
+            for (const player of msg.players) {
+              this.rememberName(player.id, player.name);
+              this.remoteStates.set(player.id, this.enrichState(player));
+            }
             this.setCombat(msg.self);
             this.emit('onWelcome', msg.id, msg.players.map((p) => this.enrichState(p)));
             this.emit('onOnlineCount', msg.online);
+            this.emit('onCaptureUpdate', msg.capture);
+            this.emit('onRoverSpots', msg.roverSpots);
             resolve();
           });
           return;
@@ -266,24 +329,29 @@ export class MarsFieldMultiplayerClient {
     }
   }
 
-  sendState(state: {
-    x: number;
-    z: number;
-    y: number;
-    yaw: number;
-    sprint: boolean;
-    moving: boolean;
-    inRover: boolean;
-  }): void {
+  sendState(
+    state: {
+      x: number;
+      z: number;
+      y: number;
+      yaw: number;
+      sprint: boolean;
+      moving: boolean;
+      inRover: boolean;
+      roverId?: string | null;
+    },
+    options?: { force?: boolean },
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.combat.alive) return;
 
     const now = performance.now();
-    if (now - this.lastSend < 50) return;
+    if (!options?.force && now - this.lastSend < 50) return;
     this.lastSend = now;
 
     const payload: ClientMessage = {
       type: 'state',
       ...state,
+      roverId: state.roverId ?? null,
       waveUntil: this.waveUntil,
     };
     this.ws.send(JSON.stringify(payload));
@@ -342,22 +410,33 @@ export class MarsFieldMultiplayerClient {
     this.waveUntil = 0;
     this.lastLocalShot = 0;
     this.playerNames.clear();
+    this.remoteStates.clear();
+    this.capture = null;
+    this.roverSpotState = [];
+    this.myTeam = null;
     this.combat = { ...DEFAULT_COMBAT };
     this.emit('onConnectionChange', false);
   }
 
   private handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
-      case 'player_joined':
-        this.emit('onPlayerJoined', this.enrichState(msg.player));
+      case 'player_joined': {
+        const player = this.enrichState(msg.player);
+        this.remoteStates.set(player.id, player);
+        this.emit('onPlayerJoined', player);
         this.emit('onOnlineCount', msg.online);
+        this.emit('onNearbyCountChange', this.getNearbyCount());
         break;
+      }
       case 'player_left':
+        this.remoteStates.delete(msg.id);
         this.emit('onPlayerLeft', msg.id);
         this.emit('onOnlineCount', msg.online);
+        this.emit('onNearbyCountChange', this.getNearbyCount());
         break;
       case 'state': {
         const state = this.enrichState(this.parsePlayerState(msg));
+        this.remoteStates.set(state.id, state);
         if (msg.id === this.myId) {
           this.setCombat({
             hp: msg.hp,
@@ -367,6 +446,7 @@ export class MarsFieldMultiplayerClient {
           });
         }
         this.emit('onPlayerState', state);
+        this.emit('onNearbyCountChange', this.getNearbyCount());
         break;
       }
       case 'laser_shot':
@@ -408,13 +488,37 @@ export class MarsFieldMultiplayerClient {
         this.emit('onPlayerState', player);
         break;
       }
-      case 'chat':
-        this.emit('onChat', {
+      case 'chat': {
+        const message: FieldChatMessage = {
           id: msg.id,
           name: msg.name,
           text: msg.text,
           ts: msg.ts,
-        });
+          scope: msg.scope,
+          x: msg.x,
+          z: msg.z,
+        };
+        this.emit('onChat', message);
+        if (msg.scope === 'proximity') {
+          this.emit('onProximityChat', message);
+        }
+        break;
+      }
+      case 'capture_update':
+        this.capture = msg.capture;
+        this.emit('onCaptureUpdate', msg.capture);
+        break;
+      case 'capture_ended':
+        this.capture = msg.capture;
+        this.emit('onCaptureUpdate', msg.capture);
+        this.emit('onCaptureEnded', msg.capture);
+        break;
+      case 'rover_spots':
+        this.roverSpotState = msg.spots;
+        this.emit('onRoverSpots', msg.spots);
+        break;
+      case 'satellite_pass':
+        this.emit('onSatellitePass', msg.durationMs, msg.azimuth);
         break;
       case 'online':
         this.emit('onOnlineCount', msg.count);
@@ -428,6 +532,7 @@ export class MarsFieldMultiplayerClient {
     return {
       id: msg.id,
       name: msg.name ?? '',
+      team: msg.team ?? 'alpha',
       x: msg.x,
       z: msg.z,
       y: msg.y,
@@ -436,6 +541,7 @@ export class MarsFieldMultiplayerClient {
       moving: msg.moving,
       waveUntil: msg.waveUntil,
       inRover: msg.inRover ?? false,
+      roverId: msg.roverId ?? null,
       hp: msg.hp ?? MAX_HP,
       alive: msg.alive ?? true,
       laserEquipped: msg.laserEquipped ?? false,

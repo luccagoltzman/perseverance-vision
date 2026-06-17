@@ -9,8 +9,11 @@ import {
   createMarsExplorerAvatar,
   getWalkBob,
 } from './marsFieldAvatar';
-import { createNameplate, mountNameplate } from './marsFieldNameplate';
+import { createNameplate, createChatBubble, mountNameplate, showChatBubble } from './marsFieldNameplate';
 import { createLaserRifle, LaserBeamManager } from './marsFieldLaser';
+import { CaptureZoneVisuals } from './marsFieldCapture';
+import { SatellitePassVisual } from './marsFieldSatellite';
+import type { CaptureMatchState, RoverSpotState } from '@/types/multiplayer';
 import { animateRoverDrive, animateRoverWave } from './marsFieldRover';
 import {
   startBoardTransition,
@@ -22,6 +25,8 @@ import {
   createParkedRovers,
   disposeParkedRovers,
   findNearestParkedRover,
+  setParkedRoverTransform,
+  setParkedRoverVisible,
   type ParkedRoverEntry,
   type VehicleMode,
 } from './marsFieldVehicle';
@@ -205,12 +210,19 @@ export function createMarsFieldScene({
   avatar.root.rotation.y = Math.PI;
   const localNameplate = createNameplate(playerName, 'local');
   mountNameplate(localNameplate, avatar.root);
+  const localChatBubble = createChatBubble();
+  avatar.root.add(localChatBubble);
   const localLaser = createLaserRifle();
   localLaser.visible = false;
   avatar.root.add(localLaser);
   scene.add(avatar.root);
 
   const laserBeams = new LaserBeamManager(scene);
+  const captureVisuals = new CaptureZoneVisuals(scene);
+  const satelliteVisual = new SatellitePassVisual(scene);
+  let captureState: CaptureMatchState | null = multiplayer?.captureState ?? null;
+  let roverSpots: RoverSpotState[] = multiplayer?.roverSpots ?? [];
+  captureVisuals.sync(captureState);
 
   const parkedRovers = createParkedRovers(scene);
   let activeRover: ParkedRoverEntry | null = null;
@@ -231,6 +243,7 @@ export function createMarsFieldScene({
     verticalVelocity = 0;
     mode = 'foot';
     activeRover = null;
+    claimingRoverId = null;
     transition = null;
     avatar.root.visible = true;
     localLaser.visible = false;
@@ -269,7 +282,62 @@ export function createMarsFieldScene({
       onPlayerRespawned: (player) => {
         if (player.id !== multiplayer.id) remotePlayers!.upsert(player);
       },
+      onCaptureUpdate: (capture) => {
+        captureState = capture;
+        captureVisuals.sync(capture);
+      },
+      onSatellitePass: (durationMs, azimuth) => {
+        satelliteVisual.trigger(durationMs, azimuth);
+      },
+      onProximityChat: (message) => {
+        if (message.id === multiplayer.id) {
+          showChatBubble(localChatBubble, message.text);
+          return;
+        }
+        remotePlayers!.showChatBubble(message.id, message.text);
+      },
+      onRoverSpots: (spots) => {
+        roverSpots = spots;
+      },
     });
+  }
+
+  let claimingRoverId: string | null = null;
+
+  function getOccupiedRoverIds(): Set<string> {
+    const occupied = multiplayer?.getOccupiedRoverIds() ?? new Set<string>();
+    if (claimingRoverId) occupied.add(claimingRoverId);
+    if (activeRover && (mode === 'rover' || mode === 'boarding')) occupied.add(activeRover.id);
+    return occupied;
+  }
+
+  function syncParkedRovers(): void {
+    const occupied = getOccupiedRoverIds();
+    const spotMap = new Map(roverSpots.map((s) => [s.id, s]));
+
+    for (const entry of parkedRovers) {
+      const isLocalVehicle =
+        (activeRover?.id === entry.id && (mode === 'rover' || mode === 'exiting')) ||
+        (claimingRoverId === entry.id && mode === 'boarding');
+      const taken = occupied.has(entry.id);
+
+      setParkedRoverVisible(entry, !taken || isLocalVehicle);
+
+      if (!taken) {
+        const spot = spotMap.get(entry.id);
+        if (spot) setParkedRoverTransform(entry, spot.x, spot.z, spot.yaw);
+      }
+    }
+  }
+
+  function currentRoverId(): string | null {
+    if (mode === 'rover' && activeRover) return activeRover.id;
+    if (mode === 'boarding' && claimingRoverId) return claimingRoverId;
+    return null;
+  }
+
+  function isInRoverMode(): boolean {
+    return mode === 'rover';
   }
 
   let mode: VehicleMode = 'foot';
@@ -351,7 +419,7 @@ export function createMarsFieldScene({
             parkedRovers,
             avatar.root.position.x,
             avatar.root.position.z,
-            null,
+            getOccupiedRoverIds(),
           )
         : null;
 
@@ -361,8 +429,22 @@ export function createMarsFieldScene({
 
     if (interact) {
       if (mode === 'foot' && nearestRover) {
+        claimingRoverId = nearestRover.id;
         transition = startBoardTransition(nearestRover, avatar);
         mode = 'boarding';
+        multiplayer?.sendState(
+          {
+            x: avatar.root.position.x,
+            z: avatar.root.position.z,
+            y: avatarY,
+            yaw: playerYaw,
+            sprint: false,
+            moving: true,
+            inRover: false,
+            roverId: claimingRoverId,
+          },
+          { force: true },
+        );
       } else if (mode === 'rover' && activeRover) {
         transition = startExitTransition(activeRover, playerYaw);
         mode = 'exiting';
@@ -399,9 +481,23 @@ export function createMarsFieldScene({
         if (transition.kind === 'board') {
           mode = 'rover';
           activeRover = transition.rover;
+          claimingRoverId = null;
           playerYaw = transition.rover.rover.root.rotation.y;
           avatar.root.visible = false;
           mountNameplate(localNameplate, activeRover.rover.root);
+          multiplayer?.sendState(
+            {
+              x: activeRover.rover.root.position.x,
+              z: activeRover.rover.root.position.z,
+              y: 0,
+              yaw: playerYaw,
+              sprint: false,
+              moving: false,
+              inRover: true,
+              roverId: activeRover.id,
+            },
+            { force: true },
+          );
         } else {
           mode = 'foot';
           avatar.root.position.set(
@@ -411,7 +507,21 @@ export function createMarsFieldScene({
           );
           avatar.root.visible = true;
           mountNameplate(localNameplate, avatar.root);
+          claimingRoverId = null;
           activeRover = null;
+          multiplayer?.sendState(
+            {
+              x: avatar.root.position.x,
+              z: avatar.root.position.z,
+              y: avatarY,
+              yaw: playerYaw,
+              sprint: false,
+              moving: false,
+              inRover: false,
+              roverId: null,
+            },
+            { force: true },
+          );
         }
         transition = null;
       }
@@ -560,6 +670,8 @@ export function createMarsFieldScene({
       positions.needsUpdate = true;
     }
 
+    syncParkedRovers();
+
     multiplayer?.sendState({
       x: posX,
       z: posZ,
@@ -567,10 +679,24 @@ export function createMarsFieldScene({
       yaw: playerYaw,
       sprint,
       moving: isMoving,
-      inRover: mode === 'rover',
+      inRover: isInRoverMode(),
+      roverId: currentRoverId(),
     });
+    multiplayer?.updateLocalPosition(posX, posZ);
+
+    if (captureState?.phase === 'active' && onInteractionHint) {
+      const inZone = captureState.zones.some((zone) => {
+        const dx = posX - zone.x;
+        const dz = posZ - zone.z;
+        return dx * dx + dz * dz <= zone.radius * zone.radius;
+      });
+      if (inZone && mode === 'foot' && !transition) {
+        onInteractionHint('Hackeando relay de sinal…');
+      }
+    }
 
     remotePlayers?.update(delta, camera);
+    satelliteVisual.update();
     laserBeams.update();
     renderer.render(scene, camera);
   };
@@ -587,6 +713,8 @@ export function createMarsFieldScene({
     onInteractionHint?.(null);
     stopWindAudio();
     flashOverlay.remove();
+    captureVisuals.dispose();
+    satelliteVisual.dispose();
     laserBeams.dispose();
     avatar.dispose();
     disposeParkedRovers(parkedRovers);

@@ -343,3 +343,37 @@
 .mars-field-healthbar__fill--low {
   background: #ef4444;
 }
+.mars-field-chat-bubble {
+  max-width: 11rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.65rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #fafafa;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -100%);
+  transition: opacity 0.3s ease;
+}
+.mars-field-chat-bubble--fade {
+  opacity: 0;
+}
+.mars-field-capture-label {
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.58rem;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -100%);
+}

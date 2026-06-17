@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { MarsRover } from './marsFieldRover';
 import { createMarsRover } from './marsFieldRover';
 import { createRoverHintLabel } from './marsFieldNameplate';
+import { PARKED_ROVER_SPOTS } from '@/constants/parkedRovers';
 
 export const INTERACT_RADIUS = 2.8;
 export const BOARD_DURATION = 0.85;
@@ -17,12 +18,7 @@ export interface ParkedRoverSpot {
   label: string;
 }
 
-export const PARKED_ROVER_SPOTS: ParkedRoverSpot[] = [
-  { id: 'alpha', x: -4, z: 16, yaw: 0.65, label: 'Rover Alpha' },
-  { id: 'beta', x: 14, z: 5, yaw: -0.85, label: 'Rover Beta' },
-  { id: 'gamma', x: -22, z: 0, yaw: 1.35, label: 'Rover Gamma' },
-  { id: 'delta', x: 8, z: -18, yaw: -2.1, label: 'Rover Delta' },
-];
+export { PARKED_ROVER_SPOTS };
 
 export interface ParkedRoverEntry {
   id: string;
@@ -87,13 +83,13 @@ export function findNearestParkedRover(
   entries: ParkedRoverEntry[],
   ax: number,
   az: number,
-  activeId: string | null,
+  occupiedIds: ReadonlySet<string>,
 ): ParkedRoverEntry | null {
   let nearest: ParkedRoverEntry | null = null;
   let best = INTERACT_RADIUS;
 
   for (const entry of entries) {
-    if (entry.id === activeId) continue;
+    if (occupiedIds.has(entry.id)) continue;
     const dist = horizontalDistance(ax, az, entry.rover.root.position.x, entry.rover.root.position.z);
     if (dist <= best) {
       best = dist;
@@ -102,6 +98,15 @@ export function findNearestParkedRover(
   }
 
   return nearest;
+}
+
+export function setParkedRoverTransform(entry: ParkedRoverEntry, x: number, z: number, yaw: number): void {
+  entry.rover.root.position.set(x, 0, z);
+  entry.rover.root.rotation.y = yaw;
+}
+
+export function setParkedRoverVisible(entry: ParkedRoverEntry, visible: boolean): void {
+  entry.rover.root.visible = visible;
 }
 
 export function easeInOutCubic(t: number): number {

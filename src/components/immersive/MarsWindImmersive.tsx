@@ -1,7 +1,7 @@
 ﻿import { useEffect, useCallback, useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { WeatherSnapshot } from '@/types/nasa';
-import type { FieldChatMessage } from '@/types/multiplayer';
+import type { CaptureMatchState, FieldChatMessage, LocalCombatState } from '@/types/multiplayer';
 import { createMarsFieldScene } from './marsFieldScene';
 import { FieldInputController } from './marsFieldInput';
 import { MarsFieldTouchControls } from './MarsFieldTouchControls';
@@ -11,9 +11,9 @@ import { MarsFieldInventory } from './MarsFieldInventory';
 import { MarsFieldCombatHud } from './MarsFieldCombatHud';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { formatSol } from '@/utils/solConverter';
-import type { LocalCombatState } from '@/types/multiplayer';
 import type { MarsFieldMultiplayerClient } from '@/services/marsFieldMultiplayer';
 import { createDefaultCombatState } from '@/services/marsFieldMultiplayer';
+import { MarsFieldCaptureHud } from './MarsFieldCaptureHud';
 
 interface MarsWindImmersiveProps {
   weather: WeatherSnapshot;
@@ -39,6 +39,9 @@ export function MarsWindImmersive({
   const [interactionHint, setInteractionHint] = useState<string | null>(null);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [combat, setCombat] = useState<LocalCombatState>(createDefaultCombatState);
+  const [capture, setCapture] = useState<CaptureMatchState | null>(null);
+  const [nearbyCount, setNearbyCount] = useState(0);
+  const [myTeam, setMyTeam] = useState(multiplayer.team);
 
   const photoCaption = useMemo(
     () =>
@@ -58,7 +61,14 @@ export function MarsWindImmersive({
       onChat: (message) => setMessages((prev) => [...prev, message].slice(-80)),
       onOnlineCount: (count) => setOnlineCount(count),
       onCombatChange: (state) => setCombat(state ?? createDefaultCombatState()),
+      onCaptureUpdate: (state) => setCapture(state),
+      onCaptureEnded: (state) => setCapture(state),
+      onNearbyCountChange: (count) => setNearbyCount(count),
     });
+
+    setCapture(multiplayer.captureState);
+    setMyTeam(multiplayer.team);
+    setNearbyCount(multiplayer.getNearbyCount());
 
     return remove;
   }, [open, multiplayer]);
@@ -147,6 +157,8 @@ export function MarsWindImmersive({
         onStow={() => multiplayer.stowLaser()}
       />
 
+      <MarsFieldCaptureHud capture={capture} myTeam={myTeam} />
+
       <MarsFieldCombatHud
         hp={combat.hp}
         alive={combat.alive}
@@ -160,6 +172,7 @@ export function MarsWindImmersive({
         messages={messages}
         playerName={playerName}
         onlineCount={onlineCount}
+        nearbyCount={nearbyCount}
         onSend={(text) => multiplayer.sendChat(text)}
       />
 

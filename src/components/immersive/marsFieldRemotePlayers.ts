@@ -9,9 +9,10 @@ import {
   getWalkBob,
   type MarsExplorerAvatar,
 } from './marsFieldAvatar';
-import { createHealthBar, createNameplate, updateHealthBar } from './marsFieldNameplate';
+import { createHealthBar, createChatBubble, createNameplate, showChatBubble, updateHealthBar } from './marsFieldNameplate';
 import { createLaserRifle } from './marsFieldLaser';
 import { animateRoverDrive, animateRoverWave, createMarsRover, type MarsRover } from './marsFieldRover';
+import { TEAM_COLORS } from '@/constants/fieldCapture';
 
 const ACCENT_PALETTE = [0xf94a1a, 0x3d8bfd, 0x9b59b6, 0x2ecc71, 0xf1c40f, 0xe74c3c, 0x1abc9c];
 
@@ -22,6 +23,7 @@ interface RemoteEntry {
   rover: MarsRover;
   laser: THREE.Group;
   label: ReturnType<typeof createNameplate>;
+  chatBubble: ReturnType<typeof createChatBubble>;
   healthBar: ReturnType<typeof createHealthBar>;
   target: FieldPlayerState;
   current: { x: number; z: number; y: number; yaw: number };
@@ -57,12 +59,18 @@ function withCombatDefaults(state: FieldPlayerState, name: string): FieldPlayerS
   return {
     ...state,
     name,
+    team: state.team ?? 'alpha',
     hp: state.hp ?? MAX_HP,
     alive: state.alive ?? true,
     laserEquipped: state.laserEquipped ?? false,
     respawnAt: state.respawnAt ?? 0,
     inRover: state.inRover ?? false,
+    roverId: state.roverId ?? null,
   };
+}
+
+function accentForTeam(state: FieldPlayerState): number {
+  return TEAM_COLORS[state.team] ?? accentForId(state.id);
 }
 
 export class RemotePlayersManager {
@@ -99,7 +107,7 @@ export class RemotePlayersManager {
     const merged = withCombatDefaults(state, name);
 
     if (!entry) {
-      const accent = accentForId(state.id);
+      const accent = accentForTeam(merged);
       const avatar = createMarsExplorerAvatar({ accent });
       const rover = createMarsRover({ accent });
       const laser = createLaserRifle();
@@ -107,6 +115,7 @@ export class RemotePlayersManager {
       avatar.root.add(laser);
 
       const label = createNameplate(name, 'remote');
+      const chatBubble = createChatBubble();
       const healthBar = createHealthBar();
 
       entry = {
@@ -116,6 +125,7 @@ export class RemotePlayersManager {
         rover,
         laser,
         label,
+        chatBubble,
         healthBar,
         target: merged,
         current: { x: merged.x, z: merged.z, y: merged.y, yaw: merged.yaw },
@@ -128,6 +138,7 @@ export class RemotePlayersManager {
       rover.root.visible = false;
       mountLabel(label, avatar.root);
       mountHealthBar(healthBar, avatar.root);
+      avatar.root.add(chatBubble);
     } else {
       entry.name = name;
       entry.label.element.textContent = name;
@@ -140,6 +151,12 @@ export class RemotePlayersManager {
     const entry = this.remotes.get(id);
     if (!entry) return;
     entry.target = withCombatDefaults({ ...entry.target, ...partial }, entry.name);
+  }
+
+  showChatBubble(id: string, text: string): void {
+    const entry = this.remotes.get(id);
+    if (!entry) return;
+    showChatBubble(entry.chatBubble, text);
   }
 
   remove(id: string): void {

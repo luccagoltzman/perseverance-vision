@@ -40,6 +40,35 @@ export function updateHealthBar(label: CSS2DObject, hp: number, alive: boolean):
   label.element.style.opacity = alive ? '1' : '0.35';
 }
 
+export function createChatBubble(): CSS2DObject {
+  const el = document.createElement('div');
+  el.className = 'mars-field-chat-bubble';
+  el.textContent = '';
+  const bubble = new CSS2DObject(el);
+  bubble.position.set(0, 2.45, 0);
+  bubble.visible = false;
+  return bubble;
+}
+
+export function showChatBubble(bubble: CSS2DObject, text: string, durationMs = 5200): void {
+  bubble.element.textContent = text;
+  bubble.visible = true;
+  bubble.element.classList.remove('mars-field-chat-bubble--fade');
+
+  const prev = (bubble.element as HTMLElement & { _hideTimer?: number })._hideTimer;
+  if (prev) window.clearTimeout(prev);
+
+  const hideTimer = window.setTimeout(() => {
+    bubble.element.classList.add('mars-field-chat-bubble--fade');
+    window.setTimeout(() => {
+      bubble.visible = false;
+      bubble.element.textContent = '';
+    }, 320);
+  }, durationMs);
+
+  (bubble.element as HTMLElement & { _hideTimer?: number })._hideTimer = hideTimer;
+}
+
 export function mountNameplate(label: CSS2DObject, host: THREE.Object3D): void {
   if (label.parent) label.parent.remove(label);
   host.add(label);

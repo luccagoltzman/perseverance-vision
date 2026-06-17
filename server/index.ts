@@ -1,6 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
+import {
+  assignTeam,
+  broadcastProximityChat,
+  CAPTURE_MIN_PLAYERS,
+  CAPTURE_TICK_MS,
+  getCaptureState,
+  scheduleCaptureRestart,
+  startCaptureIfReady,
+  startSatelliteScheduler,
+  tickCapture,
+  type FieldTeam,
+} from './fieldEvents';
+import {
+  getRoverSpots,
+  isRoverTaken,
+  isValidRoverId,
+  updateRoverSpot,
+} from './rovers';
 
 const MAX_HP = 100;
 const LASER_DAMAGE = 25;
@@ -12,6 +30,7 @@ const LASER_HALF_ANGLE = 0.22;
 interface Player {
   id: string;
   name: string;
+  team: FieldTeam;
   ws: WebSocket;
   x: number;
   z: number;
@@ -21,6 +40,7 @@ interface Player {
   moving: boolean;
   waveUntil: number;
   inRover: boolean;
+  roverId: string | null;
   hp: number;
   alive: boolean;
   laserEquipped: boolean;
@@ -53,6 +73,7 @@ function playerSnapshot(p: Player) {
   return {
     id: p.id,
     name: p.name,
+    team: p.team,
     x: p.x,
     z: p.z,
     y: p.y,
@@ -61,6 +82,7 @@ function playerSnapshot(p: Player) {
     moving: p.moving,
     waveUntil: p.waveUntil,
     inRover: p.inRover,
+    roverId: p.roverId,
     hp: p.hp,
     alive: p.alive,
     laserEquipped: p.laserEquipped,
@@ -157,6 +179,7 @@ function respawnPlayer(id: string) {
   player.respawnAt = 0;
   player.laserEquipped = false;
   player.inRover = false;
+  player.roverId = null;
   player.moving = false;
   player.sprint = false;
 
@@ -175,11 +198,56 @@ function syncPlayerState(player: Player) {
   broadcast(payload, player.id);
 }
 
+function broadcastRoverSpots(): void {
+  broadcastAll({ type: 'rover_spots', spots: getRoverSpots() });
+}
+
+function applyPlayerRoverState(
+  player: Player,
+  inRover: boolean,
+  roverId: string | null | undefined,
+  x: number,
+  z: number,
+  yaw: number,
+): void {
+  const prevInRover = player.inRover;
+  const prevRoverId = player.roverId;
+  const requestedId = typeof roverId === 'string' ? roverId : null;
+
+  if (requestedId && isValidRoverId(requestedId)) {
+    if (requestedId !== player.roverId && isRoverTaken(requestedId, players.values(), player.id)) {
+      // rover já ocupado por outro jogador
+    } else {
+      player.roverId = requestedId;
+    }
+  } else if (!inRover) {
+    player.roverId = null;
+  }
+
+  player.inRover = inRover;
+
+  if (player.inRover && player.roverId) {
+    updateRoverSpot(player.roverId, x, z, yaw);
+  }
+
+  if (prevInRover && !inRover && prevRoverId) {
+    updateRoverSpot(prevRoverId, x, z, yaw);
+    player.roverId = null;
+    broadcastRoverSpots();
+  }
+}
+
 function killPlayer(victim: Player, killerId: string | null) {
   victim.hp = 0;
   victim.alive = false;
   victim.respawnAt = Date.now() + RESPAWN_MS;
   victim.laserEquipped = false;
+  if (victim.inRover && victim.roverId) {
+    updateRoverSpot(victim.roverId, victim.x, victim.z, victim.yaw);
+    broadcastRoverSpots();
+  }
+  victim.inRover = false;
+  victim.roverId = null;
   victim.moving = false;
 
   broadcastAll({
@@ -233,6 +301,14 @@ function handleShoot(shooter: Player) {
   const target = findLaserTarget(shooter);
   if (target) {
     applyDamage(target, shooter, LASER_DAMAGE);
+  }
+}
+
+function onPlayerCountChanged() {
+  if (players.size >= CAPTURE_MIN_PLAYERS) {
+    startCaptureIfReady(players.size, broadcastAll);
+  } else {
+    startCaptureIfReady(0, broadcastAll);
   }
 }
 
@@ -299,10 +375,12 @@ wss.on('connection', (ws) => {
 
       playerId = randomUUID();
       const spawn = randomSpawn();
+      const team = assignTeam(players);
 
       const player: Player = {
         id: playerId,
         name,
+        team,
         ws,
         x: spawn.x,
         z: spawn.z,
@@ -312,6 +390,7 @@ wss.on('connection', (ws) => {
         moving: false,
         waveUntil: 0,
         inRover: false,
+        roverId: null,
         hp: MAX_HP,
         alive: true,
         laserEquipped: false,
@@ -328,6 +407,7 @@ wss.on('connection', (ws) => {
       send(ws, {
         type: 'welcome',
         id: playerId,
+        team,
         players: others,
         online: players.size,
         self: {
@@ -336,11 +416,14 @@ wss.on('connection', (ws) => {
           laserEquipped: player.laserEquipped,
           respawnAt: player.respawnAt,
         },
+        capture: getCaptureState(),
+        roverSpots: getRoverSpots(),
       });
 
       broadcast({ type: 'player_joined', player: playerSnapshot(player), online: players.size }, playerId);
       broadcast({ type: 'online', count: players.size });
-      console.log(`+ ${name} (${players.size} online)`);
+      onPlayerCountChanged();
+      console.log(`+ ${name} [${team}] (${players.size} online)`);
       return;
     }
 
@@ -358,7 +441,15 @@ wss.on('connection', (ws) => {
       player.sprint = Boolean(msg.sprint);
       player.moving = Boolean(msg.moving);
       player.waveUntil = Number(msg.waveUntil) || 0;
-      player.inRover = Boolean(msg.inRover);
+
+      applyPlayerRoverState(
+        player,
+        Boolean(msg.inRover),
+        msg.roverId as string | null | undefined,
+        player.x,
+        player.z,
+        player.yaw,
+      );
 
       broadcast(
         {
@@ -374,25 +465,13 @@ wss.on('connection', (ws) => {
     if (msg.type === 'equip_laser') {
       if (!player.alive || player.inRover) return;
       player.laserEquipped = true;
-      const payload = {
-        type: 'state' as const,
-        id: playerId,
-        ...playerSnapshot(player),
-      };
-      send(player.ws, payload);
-      broadcast(payload, playerId);
+      syncPlayerState(player);
       return;
     }
 
     if (msg.type === 'stow_laser') {
       player.laserEquipped = false;
-      const payload = {
-        type: 'state' as const,
-        id: playerId,
-        ...playerSnapshot(player),
-      };
-      send(player.ws, payload);
-      broadcast(payload, playerId);
+      syncPlayerState(player);
       return;
     }
 
@@ -405,14 +484,7 @@ wss.on('connection', (ws) => {
     if (msg.type === 'chat') {
       const text = sanitizeChat(String(msg.text ?? ''));
       if (!text) return;
-      const payload = {
-        type: 'chat' as const,
-        id: playerId,
-        name: player.name,
-        text,
-        ts: Date.now(),
-      };
-      broadcast(payload);
+      broadcastProximityChat(player, text, send, players);
       return;
     }
 
@@ -433,6 +505,10 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (!playerId) return;
     const player = players.get(playerId);
+    if (player?.inRover && player.roverId) {
+      updateRoverSpot(player.roverId, player.x, player.z, player.yaw);
+      broadcastRoverSpots();
+    }
     const timer = respawnTimers.get(playerId);
     if (timer) {
       clearTimeout(timer);
@@ -441,6 +517,7 @@ wss.on('connection', (ws) => {
     players.delete(playerId);
     broadcast({ type: 'player_left', id: playerId, online: players.size });
     broadcast({ type: 'online', count: players.size });
+    onPlayerCountChanged();
     if (player) console.log(`- ${player.name} (${players.size} online)`);
   });
 });
@@ -449,6 +526,12 @@ function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
+
+setInterval(() => {
+  tickCapture(players, broadcastAll);
+}, CAPTURE_TICK_MS);
+
+startSatelliteScheduler(broadcastAll);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Mars Field multiplayer em port ${PORT} (/ws)`);
